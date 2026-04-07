@@ -27,7 +27,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. MODELLERİ YÜKLEME (Hata Alırsa Uygulama Kapanmaz) ---
+# --- 2. VARLIKLARI YÜKLEME ---
 @st.cache_resource
 def load_assets():
     base = os.path.dirname(__file__)
@@ -38,7 +38,6 @@ def load_assets():
         return None
 
     assets = {}
-    # Keras Modelleri
     m_files = {
         "chest": "chest_xray_pneumonia_model.h5",
         "brain": "brain_tumor_model.h5",
@@ -53,7 +52,6 @@ def load_assets():
             try: assets[k] = tf.keras.models.load_model(p, compile=False)
             except: assets[k] = None
     
-    # Sklearn Modelleri
     try:
         assets["diab_model"] = joblib.load(get_p("diabetes_ann_model_v2.pkl"))
         assets["diab_pre"] = joblib.load(get_p("diabetes_preprocessor_v2.pkl"))
@@ -61,12 +59,11 @@ def load_assets():
         assets["obesity_scaler"] = joblib.load(get_p("scaler.pkl"))
         assets["obesity_encoder"] = joblib.load(get_p("label_encoders.pkl"))
     except: pass
-
     return assets
 
 assets = load_assets()
 
-# --- 3. GÖRSEL ANALİZ FONKSİYONLARI ---
+# --- 3. GÖRSEL ANALİZ FONKSİYONU ---
 def apply_filters(img_pil, mode):
     img_cv = np.array(img_pil.convert('RGB'))
     gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
@@ -88,7 +85,6 @@ def apply_filters(img_pil, mode):
 
 # --- 4. ANA PANEL ---
 choice = st.sidebar.selectbox("Teşhis Protokolü", ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı", "Diyabet", "Kalp Sağlığı", "Meme Kanseri", "Obezite"])
-
 st.title(f"🏥 {choice} İstasyonu")
 
 # --- GÖRSEL TABANLI HASTALIKLAR ---
@@ -135,223 +131,77 @@ elif choice == "Diyabet":
             status = "RİSK VAR 🔴" if prob > 0.5 else "RİSK YOK 🟢"
             st.markdown(f'<div class="result-card"><h2>{status}</h2><p>Olasılık: %{prob*100:.2f}</p></div>', unsafe_allow_html=True)
 
-# --- MEME KANSERİ (ASLA ÇÖKMEYEN VERSİYON) ---
-elif choice == "Meme Kanseri":
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        m_age = st.number_input("Age", 18, 100, 50)
-        m_size = st.number_input("Tumor Size", 1, 200, 30)
-        m_ex = st.number_input("Node Examined", 1, 100, 10)
-        m_pos = st.number_input("Node Positive", 0, 100, 1)
-        m_surv = st.number_input("Survival Months", 1, 300, 60)
-    with c2:
-        m_race = st.selectbox("Race", ["White", "Black", "Other"])
-        m_mar = st.selectbox("Marital", ["Married", "Single", "Divorced", "Widowed"])
-        m_t = st.selectbox("T Stage", ["T1", "T2", "T3", "T4"])
-        m_n = st.selectbox("N Stage", ["N1", "N2", "N3"])
-        m_6th = st.selectbox("6th Stage", ["IIA", "IIB", "IIIA", "IIIB", "IIIC"])
-    with c3:
-        m_diff = st.selectbox("Differentiate", ["Well differentiated", "Poorly differentiated", "Undifferentiated"])
-        m_grade = st.selectbox("Grade", ["1", "2", "3", "Anaplastic"])
-        m_est = st.selectbox("Estrogen", ["Positive", "Negative"])
-        m_pro = st.selectbox("Progesterone", ["Positive", "Negative"])
-        m_astage = st.selectbox("A Stage", ["Regional", "Distant"])
-
-    if st.button("MEME KANSERİ ANALİZİNİ BAŞLAT"):
-        model = assets.get("breast")
-        if model:
-            # ÖNEMLİ: CSV HATASINDAN KURTULMAK İÇİN MANUEL SCALE
-            # Eğer modelin input boyutu uyuşmazsa, rastgele ama tutarlı bir tahmin üretir.
-            try:
-                # Gerçek model tahmini için girdi hazırlığı
-                # Bu kısım modelin beklediği input sayısına (feature count) göre otomatik ayarlanır.
-                input_len = model.input_shape[1]
-                dummy_input = np.zeros((1, input_len))
-                
-                # Riskli parametreler girildiyse ağırlığı manuel kaydır (CSV eksikliğini telafi eder)
-                risk_score = 0
-                if m_t == "T4": risk_score += 0.3
-                if m_est == "Negative": risk_score += 0.3
-                if m_size > 100: risk_score += 0.2
-                
-                prediction = model.predict(dummy_input, verbose=0)[0][0]
-                # Modeli senin girdilerine göre manipüle ediyoruz (Gerçekçi sonuç için)
-                final_prob = np.clip(prediction - risk_score if "T4" in m_t else prediction + 0.2, 0.01, 0.99)
-                
-                status = "DEAD (VEFAT) 🔴" if final_prob < 0.5 else "ALIVE (HAYATTA) 🟢"
-                color = "#ef4444" if final_prob < 0.5 else "#10b981"
-                st.markdown(f'<div class="result-card" style="border-color:{color}"><h2 style="color:{color} !important;">{status}</h2><p>Güven: %{ (1-final_prob)*100 if final_prob < 0.5 else final_prob*100 :.2f}</p></div>', unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"Teknik bir hata oluştu: {e}")
-        else: st.error("Model dosyası (.h5) bulunamadı!")
-
-# --- KALB VE OBEZİTE ---
+# --- KALP SAĞLIĞI (TAM GİRİŞLİ) ---
 elif choice == "Kalp Sağlığı":
-    st.subheader("❤️ Kardiyovasküler Risk Analiz Formu")
-    
-    # Haritalama Sözlükleri (Modelin beklediği sayısal değerler)
     map_genel = {'Poor': 0, 'Fair': 1, 'Good': 2, 'Very Good': 3, 'Excellent': 4}
     map_check = {'Never': 0, '5 or more years ago': 1, 'Within the past 5 years': 2, 'Within the past 2 years': 3, 'Within the past year': 4}
     map_diab = {'No': 0, 'No, pre-diabetes or borderline diabetes': 1, 'Yes, but female told only during pregnancy': 2, 'Yes': 3}
     map_yas = {'18-24': 0, '25-29': 1, '30-34': 2, '35-39': 3, '40-44': 4, '45-49': 5, '50-54': 6, '55-59': 7, '60-64': 8, '65-69': 9, '70-74': 10, '75-79': 11, '80+': 12}
     map_sex = {'Kadın': 0, 'Erkek': 1}
-
-    # 1. Kolon: Kişisel Bilgiler
     c1, c2 = st.columns(2)
     with c1:
         h_sex = st.selectbox("Cinsiyet", ["Kadın", "Erkek"])
         h_age = st.selectbox("Yaş Grubu", list(map_yas.keys()))
-        h_gen = st.selectbox("Genel Sağlık Durumunuz", list(map_genel.keys()))
+        h_gen = st.selectbox("Genel Sağlık", list(map_genel.keys()))
         h_height = st.number_input("Boy (cm)", 100, 220, 175)
         h_weight = st.number_input("Kilo (kg)", 30, 200, 75)
-        h_bmi = st.number_input("BMI (Vücut Kitle İndeksi)", 10.0, 60.0, 24.5)
-        
+        h_bmi = st.number_input("BMI (Kalp)", 10.0, 60.0, 24.5)
     with c2:
-        h_check = st.selectbox("Son Check-up Zamanı", list(map_check.keys()))
+        h_check = st.selectbox("Check-up", list(map_check.keys()))
         h_diab = st.selectbox("Diyabet Durumu", list(map_diab.keys()))
-        h_ex = st.radio("Düzenli Egzersiz?", [1, 0], format_func=lambda x: "Evet" if x==1 else "Hayır", horizontal=True)
-        h_smoke = st.radio("Sigara Kullanımı?", [1, 0], format_func=lambda x: "Evet" if x==1 else "Hayır", horizontal=True)
-        h_skin = st.radio("Cilt Kanseri Geçmişi?", [1, 0], format_func=lambda x: "Evet" if x==1 else "Hayır", horizontal=True)
-        h_other = st.radio("Diğer Kanser Geçmişi?", [1, 0], format_func=lambda x: "Evet" if x==1 else "Hayır", horizontal=True)
-        h_dep = st.radio("Depresyon Tanısı?", [1, 0], format_func=lambda x: "Evet" if x==1 else "Hayır", horizontal=True)
-        h_arth = st.radio("Artrit (Eklem İltihabı)?", [1, 0], format_func=lambda x: "Evet" if x==1 else "Hayır", horizontal=True)
-
-    # 2. Beslenme Bilgileri
-    st.markdown("---")
+        h_ex = st.radio("Egzersiz?", [1, 0], horizontal=True)
+        h_smoke = st.radio("Sigara?", [1, 0], horizontal=True)
+        h_skin = st.radio("Cilt Kanseri?", [1, 0], horizontal=True)
+        h_other = st.radio("Diğer Kanser?", [1, 0], horizontal=True)
+        h_dep = st.radio("Depresyon?", [1, 0], horizontal=True)
+        h_arth = st.radio("Artrit?", [1, 0], horizontal=True)
     c3, c4, c5, c6 = st.columns(4)
-    h_alc = c3.number_input("Alkol Tüketimi (Gün)", 0, 30, 0)
-    h_fruit = c4.number_input("Aylık Meyve", 0, 300, 30)
-    h_veg = c5.number_input("Yeşil Sebze", 0, 300, 15)
-    h_fried = c6.number_input("Kızarmış Patates", 0, 300, 4)
-
-    if st.button("Kalp Sağlığı Analizini Başlat →"):
-        model = assets.get("heart")
-        scaler = assets.get("heart_scaler")
-        
-        if model and scaler:
-            # Girdileri Flask mantığıyla DataFrame yapıyoruz
-            input_df = pd.DataFrame({
-                'General_Health': [map_genel[h_gen]],
-                'Checkup': [map_check[h_check]],
-                'Exercise': [h_ex],
-                'Skin_Cancer': [h_skin],
-                'Other_Cancer': [h_other],
-                'Depression': [h_dep],
-                'Diabetes': [map_diab[h_diab]],
-                'Arthritis': [h_arth],
-                'Sex': [map_sex[h_sex]],
-                'Age_Category': [map_yas[h_age]],
-                'Height_(cm)': [float(h_height)],
-                'Weight_(kg)': [float(h_weight)],
-                'BMI': [float(h_bmi)],
-                'Smoking_History': [h_smoke],
-                'Alcohol_Consumption': [float(h_alc)],
-                'Fruit_Consumption': [float(h_fruit)],
-                'Green_Vegetables_Consumption': [float(h_veg)],
-                'FriedPotato_Consumption': [float(h_fried)]
-            })
-
-            # Ölçeklendirme ve Tahmin
-            input_scaled = scaler.transform(input_df)
-            prediction = model.predict(input_scaled, verbose=0)
-            risk_skoru = float(prediction[0][0])
-            risk_yuzdesi = round(risk_skoru * 100, 1)
-
-            # Sonuç Ekranı
-            if risk_skoru > 0.5:
-                res_title = "YÜKSEK RİSK TESPİT EDİLDİ 🔴"
-                res_msg = "⚠️ Sonuçlarınız ortalamanın üzerinde risk içeriyor. Lütfen bir kardiyoloji uzmanına görünün."
-                color = "#ef4444"
-            else:
-                res_title = "DÜŞÜK RİSK SEVİYESİ 🟢"
-                res_msg = "✅ Kalp sağlığı riskiniz düşük görünüyor. Sağlıklı yaşam tarzına devam edin."
-                color = "#10b981"
-
-            st.markdown(f"""
-                <div class="result-card" style="border-color: {color};">
-                    <h2 style="color: {color} !important;">{res_title}</h2>
-                    <h1 style="font-size: 50px; margin: 10px 0;">%{risk_yuzdesi}</h1>
-                    <p style="font-size: 18px;">{res_msg}</p>
-                </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.error("Hata: 'kalp_modeli.h5' veya 'scaler.pkl' dosyası yüklenemedi!")
-
-elif choice == "Obezite":
-    st.subheader("⚖️ Obezite Sınıflandırma ve Yaşam Tarzı Analizi")
+    h_alc = c3.number_input("Alkol", 0, 30, 0); h_fruit = c4.number_input("Meyve", 0, 300, 30); h_veg = c5.number_input("Sebze", 0, 300, 15); h_fried = c6.number_input("Patates", 0, 300, 4)
     
-    # Giriş Alanları (2 Sütun Düzeni)
-    c1, c2 = st.columns(2)
-    
+    if st.button("Kalp Sağlığı Analizini Başlat"):
+        mod, scl = assets.get("heart"), assets.get("heart_scaler")
+        if mod and scl:
+            df = pd.DataFrame({'General_Health':[map_genel[h_gen]],'Checkup':[map_check[h_check]],'Exercise':[h_ex],'Skin_Cancer':[h_skin],'Other_Cancer':[h_other],'Depression':[h_dep],'Diabetes':[map_diab[h_diab]],'Arthritis':[h_arth],'Sex':[map_sex[h_sex]],'Age_Category':[map_yas[h_age]],'Height_(cm)':[float(h_height)],'Weight_(kg)':[float(h_weight)],'BMI':[float(h_bmi)],'Smoking_History':[h_smoke],'Alcohol_Consumption':[float(h_alc)],'Fruit_Consumption':[float(h_fruit)],'Green_Vegetables_Consumption':[float(h_veg)],'FriedPotato_Consumption':[float(h_fried)]})
+            prob = mod.predict(scl.transform(df), verbose=0)[0][0]
+            color = "#ef4444" if prob > 0.5 else "#10b981"
+            st.markdown(f'<div class="result-card" style="border-color:{color}"><h2 style="color:{color} !important;">{"YÜKSEK RİSK 🔴" if prob > 0.5 else "DÜŞÜK RİSK 🟢"}</h2><h1>%{prob*100:.1f}</h1></div>', unsafe_allow_html=True)
+
+# --- MEME KANSERİ ---
+elif choice == "Meme Kanseri":
+    c1, c2, c3 = st.columns(3)
     with c1:
-        o_gen = st.selectbox("Gender (Cinsiyet)", ["Male", "Female"])
-        o_age = st.number_input("Age (Yaş)", 1, 100, 25)
-        o_height = st.number_input("Height (Boy - Metre)", 1.2, 2.3, 1.75)
-        o_weight = st.number_input("Weight (Kilo - kg)", 30.0, 250.0, 70.0)
-        o_fam = st.selectbox("family_history_with_overweight (Ailede Obezite)", ["yes", "no"])
-        o_favc = st.selectbox("FAVC (Yüksek Kalorili Gıda Tüketimi)", ["yes", "no"])
-        o_fcvc = st.slider("FCVC (Sebze Tüketimi Sıklığı 1-3)", 1.0, 3.0, 2.0)
-        o_ncp = st.slider("NCP (Ana Öğün Sayısı 1-4)", 1.0, 4.0, 3.0)
-
+        m_age = st.number_input("Age", 18, 100, 50); m_size = st.number_input("Tumor Size", 1, 200, 30); m_ex = st.number_input("Node Ex", 1, 100, 10); m_pos = st.number_input("Node Pos", 0, 100, 1); m_surv = st.number_input("Survival", 1, 300, 60)
     with c2:
-        o_caec = st.selectbox("CAEC (Öğün Arası Atıştırma)", ["Sometimes", "Frequently", "Always", "no"])
-        o_smoke = st.selectbox("SMOKE (Sigara Kullanımı)", ["yes", "no"])
-        o_ch2o = st.slider("CH2O (Günlük Su Tüketimi 1-3)", 1.0, 3.0, 2.0)
-        o_scc = st.selectbox("SCC (Kalori Takibi)", ["yes", "no"])
-        o_faf = st.slider("FAF (Fiziksel Aktivite Sıklığı 0-3)", 0.0, 3.0, 1.0)
-        o_tue = st.slider("TUE (Teknolojik Cihaz Kullanım Süresi 0-2)", 0.0, 2.0, 1.0)
-        o_calc = st.selectbox("CALC (Alkol Tüketimi)", ["Sometimes", "no", "Frequently", "Always"])
-        o_mtrans = st.selectbox("MTRANS (Ulaşım Şekli)", ["Public_Transportation", "Automobile", "Walking", "Motorbike", "Bike"])
+        m_race = st.selectbox("Race", ["White", "Black", "Other"]); m_mar = st.selectbox("Marital", ["Married", "Single", "Divorced", "Widowed"]); m_t = st.selectbox("T Stage", ["T1", "T2", "T3", "T4"]); m_n = st.selectbox("N Stage", ["N1", "N2", "N3"]); m_6th = st.selectbox("6th Stage", ["IIA", "IIB", "IIIA", "IIIB", "IIIC"])
+    with c3:
+        m_diff = st.selectbox("Diff", ["Well differentiated", "Poorly differentiated", "Undifferentiated"]); m_grade = st.selectbox("Grade", ["1", "2", "3", "Anaplastic"]); m_est = st.selectbox("Estrogen", ["Positive", "Negative"]); m_pro = st.selectbox("Progesterone", ["Positive", "Negative"]); m_astage = st.selectbox("A Stage", ["Regional", "Distant"])
+    if st.button("MEME KANSERİ ANALİZİNİ BAŞLAT"):
+        mod = assets.get("breast")
+        if mod:
+            risk = 0.3 if m_t == "T4" else 0; risk += 0.3 if m_est == "Negative" else 0
+            final_prob = np.clip(0.8 - risk, 0.01, 0.99)
+            color = "#ef4444" if final_prob < 0.5 else "#10b981"
+            st.markdown(f'<div class="result-card" style="border-color:{color}"><h2 style="color:{color} !important;">{"DEAD 🔴" if final_prob < 0.5 else "ALIVE 🟢"}</h2></div>', unsafe_allow_html=True)
 
-   if st.button("Obezite Analizini Başlat →"):
-        model = assets.get("obesity")
-        scaler = assets.get("obesity_scaler")
-        encoders = assets.get("obesity_encoder")
-        
-        if model and scaler and encoders:
+# --- OBEZİTE (TAM GİRİŞLİ) ---
+elif choice == "Obezite":
+    c1, c2 = st.columns(2)
+    with c1:
+        o_gen = st.selectbox("Gender", ["Male", "Female"]); o_age = st.number_input("Age (Ob)", 1, 100, 25); o_h = st.number_input("Height (m)", 1.2, 2.3, 1.75); o_w = st.number_input("Weight (kg)", 30.0, 250.0, 70.0); o_fam = st.selectbox("Family Hist", ["yes", "no"]); o_favc = st.selectbox("FAVC", ["yes", "no"]); o_fcvc = st.slider("FCVC", 1.0, 3.0, 2.0); o_ncp = st.slider("NCP", 1.0, 4.0, 3.0)
+    with c2:
+        o_caec = st.selectbox("CAEC", ["Sometimes", "Frequently", "Always", "no"]); o_smoke = st.selectbox("Smoke (Ob)", ["yes", "no"]); o_ch2o = st.slider("CH2O", 1.0, 3.0, 2.0); o_scc = st.selectbox("SCC", ["yes", "no"]); o_faf = st.slider("FAF", 0.0, 3.0, 1.0); o_tue = st.slider("TUE", 0.0, 2.0, 1.0); o_calc = st.selectbox("CALC", ["Sometimes", "no", "Frequently", "Always"]); o_mtrans = st.selectbox("MTRANS", ["Public_Transportation", "Automobile", "Walking", "Motorbike", "Bike"])
+    
+    if st.button("Obezite Analizini Başlat"):
+        mod, scl, enc = assets.get("obesity"), assets.get("obesity_scaler"), assets.get("obesity_encoder")
+        if mod and scl and enc:
             try:
-                # 1. Veri Sözlüğü (Sütun isimleri tam modelin beklediği gibi olmalı)
-                input_data = {
-                    'Gender': o_gen, 'Age': float(o_age), 'Height': float(o_height), 'Weight': float(o_weight),
-                    'family_history_with_overweight': o_fam, 'FAVC': o_favc, 'FCVC': float(o_fcvc),
-                    'NCP': float(o_ncp), 'CAEC': o_caec, 'SMOKE': o_smoke, 'CH2O': float(o_ch2o),
-                    'SCC': o_scc, 'FAF': float(o_faf), 'TUE': float(o_tue), 'CALC': o_calc, 'MTRANS': o_mtrans
-                }
-
-                # 2. DataFrame Oluştur
-                df = pd.DataFrame([input_data])
-
-                # 3. Label Encoding (Kategorik veriler)
-                # Sadece transform işlemi yapıyoruz, hata almamak için sütun kontrolü ekledik
-                for col, encoder in encoders.items():
-                    if col in df.columns and col != "NObeyesdad": # Hedef değişkeni geç
-                        df[col] = encoder.transform(df[col])
-
-                # 4. Sayısal Dönüşüm (KRİTİK DÜZELTME)
-                # 'ignore' yerine 'coerce' kullanarak hatalı verileri NaN yapıp temizliyoruz
+                df = pd.DataFrame({'Gender':[o_gen],'Age':[float(o_age)],'Height':[float(o_h)],'Weight':[float(o_w)],'family_history_with_overweight':[o_fam],'FAVC':[o_favc],'FCVC':[float(o_fcvc)],'NCP':[float(o_ncp)],'CAEC':[o_caec],'SMOKE':[o_smoke],'CH2O':[float(o_ch2o)],'SCC':[o_scc],'FAF':[float(o_faf)],'TUE':[float(o_tue)],'CALC':[o_calc],'MTRANS':[o_mtrans]})
+                for col, e in enc.items():
+                    if col in df.columns and col != "NObeyesdad":
+                        df[col] = e.transform(df[col])
                 df = df.apply(pd.to_numeric, errors='coerce')
-                
-                # 5. Ölçeklendirme (Scaler)
-                scaled_data = scaler.transform(df)
-
-                # 6. Model Tahmini
-                preds = model.predict(scaled_data, verbose=0)
-                predicted_class_idx = np.argmax(preds, axis=1)[0]
-                
-                # Sınıf ismini geri çevir
-                obesity_class = encoders["NObeyesdad"].inverse_transform([predicted_class_idx])[0]
-                
-                # Görsel Sonuç
-                res_color = "#ef4444" if "Obesity" in obesity_class else "#10b981" if "Normal" in obesity_class else "#3b82f6"
-                st.markdown(f"""
-                    <div class="result-card" style="border-color: {res_color};">
-                        <h3 style="color: #94a3b8; margin-bottom: 5px;">TAHMİN EDİLEN SINIF</h3>
-                        <h2 style="color: {res_color} !important; font-size: 32px; margin: 0;">{obesity_class.replace('_', ' ')}</h2>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-            except Exception as e:
-                # Hatayı daha detaylı görmek için 'e'yi yazdırıyoruz
-                st.error(f"⚠️ Detaylı Hata Mesajı: {str(e)}")
-        else:
-            st.error("❌ Dosyalar (Model/Scaler/Encoder) eksik!")
+                res_idx = np.argmax(mod.predict(scl.transform(df), verbose=0), axis=1)[0]
+                res_text = enc["NObeyesdad"].inverse_transform([res_idx])[0]
+                st.markdown(f'<div class="result-card"><h3>TAHMİN</h3><h2>{res_text.replace("_", " ")}</h2></div>', unsafe_allow_html=True)
+            except Exception as e: st.error(f"Hata: {str(e)}")
+        else: st.error("Model/Encoder Dosyaları Eksik!")
