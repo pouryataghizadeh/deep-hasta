@@ -48,9 +48,14 @@ def load_all_assets():
         "heart": "kalp_modeli.h5",
         "obesity": "obesity_model.h5"
     }
-    for k, v in m_files.items():
+   for k, v in m_files.items():
         p = get_p(v)
-        if p: assets[k] = tf.keras.models.load_model(p, compile=False)
+        if p:
+            try: 
+                assets[k] = tf.keras.models.load_model(p, compile=False)
+            except Exception as e: 
+                st.sidebar.error(f"❌ {v} YÜKLENEMEDİ! Detay: {e}")
+                assets[k] = None
 
     # Scaler ve Encoderlar
     try:
