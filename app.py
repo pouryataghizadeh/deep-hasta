@@ -303,43 +303,46 @@ elif choice == "Obezite":
         o_calc = st.selectbox("CALC (Alkol Tüketimi)", ["Sometimes", "no", "Frequently", "Always"])
         o_mtrans = st.selectbox("MTRANS (Ulaşım Şekli)", ["Public_Transportation", "Automobile", "Walking", "Motorbike", "Bike"])
 
-    if st.button("Obezite Analizini Başlat →"):
+   if st.button("Obezite Analizini Başlat →"):
         model = assets.get("obesity")
         scaler = assets.get("obesity_scaler")
         encoders = assets.get("obesity_encoder")
         
         if model and scaler and encoders:
             try:
-                # 1. Kullanıcı verilerini bir sözlükte topla
+                # 1. Veri Sözlüğü (Sütun isimleri tam modelin beklediği gibi olmalı)
                 input_data = {
-                    'Gender': o_gen, 'Age': o_age, 'Height': o_height, 'Weight': o_weight,
-                    'family_history_with_overweight': o_fam, 'FAVC': o_favc, 'FCVC': o_fcvc,
-                    'NCP': o_ncp, 'CAEC': o_caec, 'SMOKE': o_smoke, 'CH2O': o_ch2o,
-                    'SCC': o_scc, 'FAF': o_faf, 'TUE': o_tue, 'CALC': o_calc, 'MTRANS': o_mtrans
+                    'Gender': o_gen, 'Age': float(o_age), 'Height': float(o_height), 'Weight': float(o_weight),
+                    'family_history_with_overweight': o_fam, 'FAVC': o_favc, 'FCVC': float(o_fcvc),
+                    'NCP': float(o_ncp), 'CAEC': o_caec, 'SMOKE': o_smoke, 'CH2O': float(o_ch2o),
+                    'SCC': o_scc, 'FAF': float(o_faf), 'TUE': float(o_tue), 'CALC': o_calc, 'MTRANS': o_mtrans
                 }
 
-                # 2. Veriyi DataFrame'e çevir
+                # 2. DataFrame Oluştur
                 df = pd.DataFrame([input_data])
 
-                # 3. Label Encoding İşlemi (Kategorik verileri modele hazırla)
-                for col in encoders:
-                    if col in df.columns:
-                        df[col] = encoders[col].transform(df[col])
+                # 3. Label Encoding (Kategorik veriler)
+                # Sadece transform işlemi yapıyoruz, hata almamak için sütun kontrolü ekledik
+                for col, encoder in encoders.items():
+                    if col in df.columns and col != "NObeyesdad": # Hedef değişkeni geç
+                        df[col] = encoder.transform(df[col])
 
-                # 4. Sayısal Dönüşüm ve Ölçeklendirme
-                df = df.apply(pd.to_numeric, errors='ignore')
+                # 4. Sayısal Dönüşüm (KRİTİK DÜZELTME)
+                # 'ignore' yerine 'coerce' kullanarak hatalı verileri NaN yapıp temizliyoruz
+                df = df.apply(pd.to_numeric, errors='coerce')
+                
+                # 5. Ölçeklendirme (Scaler)
                 scaled_data = scaler.transform(df)
 
-                # 5. Model Tahmini
+                # 6. Model Tahmini
                 preds = model.predict(scaled_data, verbose=0)
                 predicted_class_idx = np.argmax(preds, axis=1)[0]
                 
-                # Sınıf ismini geri çevir (NObeyesdad sütunundan)
+                # Sınıf ismini geri çevir
                 obesity_class = encoders["NObeyesdad"].inverse_transform([predicted_class_idx])[0]
                 
-                # Sonuç Renklendirme
+                # Görsel Sonuç
                 res_color = "#ef4444" if "Obesity" in obesity_class else "#10b981" if "Normal" in obesity_class else "#3b82f6"
-
                 st.markdown(f"""
                     <div class="result-card" style="border-color: {res_color};">
                         <h3 style="color: #94a3b8; margin-bottom: 5px;">TAHMİN EDİLEN SINIF</h3>
@@ -348,6 +351,7 @@ elif choice == "Obezite":
                 """, unsafe_allow_html=True)
                 
             except Exception as e:
-                st.error(f"⚠️ Analiz sırasında bir hata oluştu: {e}")
+                # Hatayı daha detaylı görmek için 'e'yi yazdırıyoruz
+                st.error(f"⚠️ Detaylı Hata Mesajı: {str(e)}")
         else:
-            st.error("❌ Hata: 'obesity_model.h5', 'scaler.pkl' veya 'label_encoders.pkl' dosyaları bulunamadı!")
+            st.error("❌ Dosyalar (Model/Scaler/Encoder) eksik!")
