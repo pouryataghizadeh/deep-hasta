@@ -7,8 +7,8 @@ import pandas as pd
 import joblib
 from PIL import Image, ImageEnhance, ImageFilter
 
-# --- 1. TASARIM AYARLARI ---
-st.set_page_config(page_title="PHOENIX AI Diagnostic", layout="wide")
+# --- 1. GLOBAL TASARIM ---
+st.set_page_config(page_title="PHOENIX AI Multi-Diagnostic", layout="wide")
 
 st.markdown("""
     <style>
@@ -17,19 +17,20 @@ st.markdown("""
     .result-card {
         padding: 30px; border-radius: 20px; border: 2px solid #3b82f6;
         background: rgba(30, 41, 59, 0.9); margin: 20px 0; text-align: center;
+        box-shadow: 0 10px 30px rgba(59, 130, 246, 0.2);
     }
-    .img-label { color: #60a5fa; font-weight: 800; font-size: 13px; text-align: center; text-transform: uppercase; }
+    .img-label { color: #60a5fa; font-weight: 800; font-size: 13px; text-align: center; text-transform: uppercase; margin-bottom:10px; }
     h1, h2, h3 { color: #3b82f6 !important; font-weight: 800; }
     .stButton>button {
         width: 100%; background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
-        color: #000; border-radius: 14px; padding: 18px; font-weight: 800; border: none;
+        color: #000; border-radius: 14px; padding: 18px; font-weight: 800; border: none; font-size: 1.1rem;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. VARLIKLARI YÜKLEME ---
+# --- 2. TÜM VARLIKLARIN YÜKLENMESİ ---
 @st.cache_resource
-def load_assets():
+def load_all_assets():
     base = os.path.dirname(__file__)
     def get_p(name):
         paths = [os.path.join(base, name), os.path.join(base, "models", name)]
@@ -38,6 +39,7 @@ def load_assets():
         return None
 
     assets = {}
+    # Modeller (.h5 ve .keras)
     m_files = {
         "chest": "chest_xray_pneumonia_model.h5",
         "brain": "brain_tumor_model.h5",
@@ -48,130 +50,78 @@ def load_assets():
     }
     for k, v in m_files.items():
         p = get_p(v)
-        if p:
-            try: assets[k] = tf.keras.models.load_model(p, compile=False)
-            except: assets[k] = None
-    
+        if p: assets[k] = tf.keras.models.load_model(p, compile=False)
+
+    # Scaler ve Encoderlar
     try:
         assets["diab_model"] = joblib.load(get_p("diabetes_ann_model_v2.pkl"))
         assets["diab_pre"] = joblib.load(get_p("diabetes_preprocessor_v2.pkl"))
         assets["heart_scaler"] = joblib.load(get_p("scaler.pkl"))
-        assets["obesity_scaler"] = joblib.load(get_p("scaler2.pkl"))
+        assets["obesity_scaler"] = joblib.load(get_p("obesity_scaler.pkl")) or joblib.load(get_p("scaler2.pkl"))
         assets["obesity_encoder"] = joblib.load(get_p("label_encoders.pkl"))
     except: pass
     return assets
 
-assets = load_assets()
+assets = load_all_assets()
 
-# --- 3. GÖRSEL ANALİZ FONKSİYONU ---
-# --- GÖRSEL ANALİZLER: GÖĞÜS, BEYİN VE KEMİK ---
-if choice in ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı"]:
-    up = st.file_uploader(f"{choice} İçin Görüntü Yükleyin", type=["jpg", "png", "jpeg"])
-    
-    if up:
-        img = Image.open(up)
-        col_img, col_res = st.columns([1, 1])
-        
-        with col_img:
-            st.image(img, caption="Orijinal Görüntü Kaydı", use_container_width=True)
-            
-        with col_res:
-            if st.button(f"{choice.upper()} ANALİZİNİ BAŞLAT"):
-                # Seçime göre model anahtarını ve resim boyutunu ayarla
-                m_key = "chest" if "Göğüs" in choice else "brain" if "Beyin" in choice else "fracture"
-                model = assets.get(m_key)
-                
-                if model:
-                    # 1. Görüntü Hazırlama (Preprocessing)
-                    size = (224, 224) if m_key == "brain" else (150, 150)
-                    img_resized = img.convert('RGB').resize(size)
-                    prep = np.array(img_resized) / 255.0
-                    input_data = np.expand_dims(prep, axis=0)
-                    
-                    with st.spinner("Yapay Zeka Pikselleri Analiz Ediyor..."):
-                        preds = model.predict(input_data, verbose=0)
-                    
-                    # 2. Teşhis Mantığı
-                    res_text = ""
-                    res_color = "#10b981" # Varsayılan Yeşil
-                    
-                    if m_key == "brain":
-                        # Beyin Tümörü Sınıflandırması
-                        classes = ["Glioma (Tümör) 🔴", "Meningioma (Tümör) 🔴", "Normal (Tümör Yok) 🟢", "Pituitary (Tümör) 🔴"]
-                        idx = np.argmax(preds[0])
-                        res_text = f"TEŞHİS: {classes[idx]}"
-                        res_color = "#ef4444" if idx != 2 else "#10b981"
-                        conf = preds[0][idx] * 100
-                    
-                    elif m_key == "chest":
-                        # Göğüs Pnömoni (Binary)
-                        score = preds[0][0]
-                        res_text = "PNÖMONİ TESPİT EDİLDİ 🔴" if score >= 0.5 else "AKCİĞERLER NORMAL 🟢"
-                        res_color = "#ef4444" if score >= 0.5 else "#10b981"
-                        conf = score * 100 if score >= 0.5 else (1 - score) * 100
-                        
-                    elif m_key == "fracture":
-                        # Kemik Kırığı (Binary)
-                        # Model çıktı değerine göre (0-1 arası)
-                        score = preds[0][0]
-                        res_text = "KIRIK TESPİT EDİLDİ 🔴" if score >= 0.5 else "KEMİK YAPISI SAĞLAM 🟢"
-                        res_color = "#ef4444" if score >= 0.5 else "#10b981"
-                        conf = score * 100 if score >= 0.5 else (1 - score) * 100
+# --- 3. GÖRSEL FİLTRELEME FONKSİYONU ---
+def apply_filters(img_pil, mode):
+    img_cv = np.array(img_pil.convert('RGB'))
+    gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
+    if mode == "Göğüs":
+        o1 = img_pil.filter(ImageFilter.SHARPEN)
+        o2 = ImageEnhance.Contrast(img_pil).enhance(1.8)
+        o3 = cv2.applyColorMap(gray, cv2.COLORMAP_BONE)
+        return o1, o2, o3
+    elif mode == "Beyin":
+        o1 = cv2.Canny(gray, 100, 200)
+        o2 = cv2.dilate(o1, np.ones((5,5), np.uint8))
+        o3 = cv2.applyColorMap(gray, cv2.COLORMAP_JET)
+        return o1, o2, o3
+    else: # Kemik
+        o1 = cv2.equalizeHist(gray)
+        o2 = cv2.Canny(gray, 50, 150)
+        o3 = cv2.morphologyEx(o1, cv2.MORPH_GRADIENT, np.ones((5,5), np.uint8))
+        return o1, o2, o3
 
-                    # 3. Sonuç Kartı
-                    st.markdown(f"""
-                        <div class="result-card" style="border-color: {res_color};">
-                            <h3 style="color: #94a3b8; margin-bottom: 5px;">KLİNİK ANALİZ SONUCU</h3>
-                            <h2 style="color: {res_color} !important; font-size: 24px; margin: 0;">{res_text}</h2>
-                            <p style="font-size: 18px; margin-top: 10px;">Analiz Güveni: <b>%{conf:.2f}</b></p>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # 4. Üçlü Görsel Filtreler (Filtreleme kodunla aynı)
-                    st.divider()
-                    st.write("🔍 **Dijital İnceleme Katmanları:**")
-                    v1, v2, v3 = apply_filters(img, choice.split()[0])
-                    v_cols = st.columns(3)
-                    
-                    labels = {
-                        "Göğüs": ["Sharpen (Keskinlik)", "High Contrast", "BONE Map"],
-                        "Beyin": ["Canny (Kenar)", "Dilation (Doku)", "JET (Isı Haritası)"],
-                        "Kemik": ["Equalize (Denge)", "Edge Detection", "Morph Gradient"]
-                    }
-                    current_labels = labels.get(choice.split()[0], ["Filtre 1", "Filtre 2", "Filtre 3"])
-                    
-                    v_cols[0].image(v1, caption=current_labels[0], use_container_width=True)
-                    v_cols[1].image(v2, caption=current_labels[1], use_container_width=True)
-                    v_cols[2].image(v3, caption=current_labels[2], use_container_width=True)
-                    
-                else:
-                    st.error(f"Hata: {choice} modeli yüklenemedi! Lütfen dosya isimlerini kontrol edin.")
-
-# --- 4. ANA PANEL ---
+# --- 4. ANA PANEL VE SEÇİMLER ---
 choice = st.sidebar.selectbox("Teşhis Protokolü", ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı", "Diyabet", "Kalp Sağlığı", "Meme Kanseri", "Obezite"])
-st.title(f"🏥 {choice} İstasyonu")
+st.title(f"🏥 {choice} Analiz İstasyonu")
 
-# --- GÖRSEL TABANLI HASTALIKLAR ---
+# --- GÖRSEL TABANLI (GÖĞÜS, BEYİN, KEMİK) ---
 if choice in ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı"]:
-    up = st.file_uploader("Dosya Seçin", type=["jpg", "png", "jpeg"])
+    up = st.file_uploader("Görüntü Dosyasını Yükleyin", type=["jpg", "png", "jpeg"])
     if up:
         img = Image.open(up)
         c1, c2 = st.columns([1, 1])
         with c1: st.image(img, caption="Orijinal Görüntü", use_container_width=True)
         with c2:
-            if st.button("ANALİZİ BAŞLAT"):
+            if st.button(f"{choice.upper()} ANALİZİNİ BAŞLAT"):
                 m_key = "chest" if "Göğüs" in choice else "brain" if "Beyin" in choice else "fracture"
                 model = assets.get(m_key)
                 if model:
                     size = (224, 224) if m_key == "brain" else (150, 150)
                     prep = np.array(img.convert('RGB').resize(size)) / 255.0
                     preds = model.predict(np.expand_dims(prep, axis=0), verbose=0)
-                    res = "RİSKLİ 🔴" if (preds[0][0] > 0.5 if m_key != "brain" else np.argmax(preds[0]) != 2) else "NORMAL 🟢"
-                    st.markdown(f'<div class="result-card"><h2>SONUÇ: {res}</h2></div>', unsafe_allow_html=True)
+                    
+                    if m_key == "brain":
+                        classes = ["Glioma (Tümör) 🔴", "Meningioma (Tümör) 🔴", "Normal (Tümör Yok) 🟢", "Pituitary (Tümör) 🔴"]
+                        idx = np.argmax(preds[0])
+                        res = f"TEŞHİS: {classes[idx]}"
+                        color = "#ef4444" if idx != 2 else "#10b981"
+                    else:
+                        score = preds[0][0]
+                        res = "RİSK TESPİT EDİLDİ 🔴" if score > 0.5 else "DURUM NORMAL 🟢"
+                        color = "#ef4444" if score > 0.5 else "#10b981"
+                    
+                    st.markdown(f'<div class="result-card" style="border-color:{color}"><h2>{res}</h2></div>', unsafe_allow_html=True)
+                    st.divider()
                     v1, v2, v3 = apply_filters(img, choice.split()[0])
                     vcols = st.columns(3)
-                    for i, vimg in enumerate([v1, v2, v3]): vcols[i].image(vimg, use_container_width=True)
-                else: st.error("Model yüklenemedi!")
+                    vcols[0].image(v1, caption="Filtre 1", use_container_width=True)
+                    vcols[1].image(v2, caption="Filtre 2", use_container_width=True)
+                    vcols[2].image(v3, caption="Filtre 3", use_container_width=True)
+                else: st.error("Model dosyası bulunamadı!")
 
 # --- DİYABET ---
 elif choice == "Diyabet":
@@ -179,23 +129,23 @@ elif choice == "Diyabet":
     with c1:
         gender = st.selectbox("Cinsiyet", ["Female", "Male"])
         age = st.number_input("Yaş", 0, 120, 50)
-        hyp = st.selectbox("Hipertansiyon", [0, 1])
-        heart = st.selectbox("Kalp Hastalığı", [0, 1])
+        hyp = st.selectbox("Hipertansiyon (0/1)", [0, 1])
     with c2:
-        smoke = st.selectbox("Sigara", ["never", "current", "former", "ever", "not current"])
+        heart = st.selectbox("Kalp Hastalığı (0/1)", [0, 1])
+        smoke = st.selectbox("Sigara Geçmişi", ["never", "current", "former", "ever", "not current"])
         bmi = st.number_input("BMI", 10.0, 70.0, 25.0)
-        hba = st.number_input("HbA1c", 3.0, 15.0, 5.5)
-        glu = st.number_input("Glikoz", 50, 500, 120)
-    if st.button("Diyabet Analizi"):
+    hba = st.number_input("HbA1c Seviyesi", 3.0, 15.0, 5.5)
+    glu = st.number_input("Kan Glikoz Seviyesi", 50, 500, 120)
+
+    if st.button("Diyabet Risk Analizi"):
         mod, pre = assets.get("diab_model"), assets.get("diab_pre")
         if mod and pre:
             df = pd.DataFrame([[gender, age, hyp, heart, smoke, bmi, hba, glu]], columns=['gender','age','hypertension','heart_disease','smoking_history','bmi','HbA1c_level','blood_glucose_level'])
-            proc = pre.transform(df)
-            prob = mod.predict_proba(proc)[0][1]
+            prob = mod.predict_proba(pre.transform(df))[0][1]
             status = "RİSK VAR 🔴" if prob > 0.5 else "RİSK YOK 🟢"
             st.markdown(f'<div class="result-card"><h2>{status}</h2><p>Olasılık: %{prob*100:.2f}</p></div>', unsafe_allow_html=True)
 
-# --- KALP SAĞLIĞI (TAM GİRİŞLİ) ---
+# --- KALP SAĞLIĞI ---
 elif choice == "Kalp Sağlığı":
     map_genel = {'Poor': 0, 'Fair': 1, 'Good': 2, 'Very Good': 3, 'Excellent': 4}
     map_check = {'Never': 0, '5 or more years ago': 1, 'Within the past 5 years': 2, 'Within the past 2 years': 3, 'Within the past year': 4}
@@ -222,13 +172,13 @@ elif choice == "Kalp Sağlığı":
     c3, c4, c5, c6 = st.columns(4)
     h_alc = c3.number_input("Alkol", 0, 30, 0); h_fruit = c4.number_input("Meyve", 0, 300, 30); h_veg = c5.number_input("Sebze", 0, 300, 15); h_fried = c6.number_input("Patates", 0, 300, 4)
     
-    if st.button("Kalp Sağlığı Analizini Başlat"):
+    if st.button("Kalp Sağlığı Analizini Başlat →"):
         mod, scl = assets.get("heart"), assets.get("heart_scaler")
         if mod and scl:
             df = pd.DataFrame({'General_Health':[map_genel[h_gen]],'Checkup':[map_check[h_check]],'Exercise':[h_ex],'Skin_Cancer':[h_skin],'Other_Cancer':[h_other],'Depression':[h_dep],'Diabetes':[map_diab[h_diab]],'Arthritis':[h_arth],'Sex':[map_sex[h_sex]],'Age_Category':[map_yas[h_age]],'Height_(cm)':[float(h_height)],'Weight_(kg)':[float(h_weight)],'BMI':[float(h_bmi)],'Smoking_History':[h_smoke],'Alcohol_Consumption':[float(h_alc)],'Fruit_Consumption':[float(h_fruit)],'Green_Vegetables_Consumption':[float(h_veg)],'FriedPotato_Consumption':[float(h_fried)]})
             prob = mod.predict(scl.transform(df), verbose=0)[0][0]
             color = "#ef4444" if prob > 0.5 else "#10b981"
-            st.markdown(f'<div class="result-card" style="border-color:{color}"><h2 style="color:{color} !important;">{"YÜKSEK RİSK 🔴" if prob > 0.5 else "DÜŞÜK RİSK 🟢"}</h2><h1>%{prob*100:.1f}</h1></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="result-card" style="border-color:{color}"><h2>{"YÜKSEK RİSK 🔴" if prob > 0.5 else "DÜŞÜK RİSK 🟢"}</h2><h1>%{prob*100:.1f}</h1></div>', unsafe_allow_html=True)
 
 # --- MEME KANSERİ ---
 elif choice == "Meme Kanseri":
@@ -245,9 +195,9 @@ elif choice == "Meme Kanseri":
             risk = 0.3 if m_t == "T4" else 0; risk += 0.3 if m_est == "Negative" else 0
             final_prob = np.clip(0.8 - risk, 0.01, 0.99)
             color = "#ef4444" if final_prob < 0.5 else "#10b981"
-            st.markdown(f'<div class="result-card" style="border-color:{color}"><h2 style="color:{color} !important;">{"DEAD 🔴" if final_prob < 0.5 else "ALIVE 🟢"}</h2></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="result-card" style="border-color:{color}"><h2>{"DEAD 🔴" if final_prob < 0.5 else "ALIVE 🟢"}</h2></div>', unsafe_allow_html=True)
 
-# --- OBEZİTE (TAM GİRİŞLİ) ---
+# --- OBEZİTE ---
 elif choice == "Obezite":
     c1, c2 = st.columns(2)
     with c1:
@@ -261,11 +211,9 @@ elif choice == "Obezite":
             try:
                 df = pd.DataFrame({'Gender':[o_gen],'Age':[float(o_age)],'Height':[float(o_h)],'Weight':[float(o_w)],'family_history_with_overweight':[o_fam],'FAVC':[o_favc],'FCVC':[float(o_fcvc)],'NCP':[float(o_ncp)],'CAEC':[o_caec],'SMOKE':[o_smoke],'CH2O':[float(o_ch2o)],'SCC':[o_scc],'FAF':[float(o_faf)],'TUE':[float(o_tue)],'CALC':[o_calc],'MTRANS':[o_mtrans]})
                 for col, e in enc.items():
-                    if col in df.columns and col != "NObeyesdad":
-                        df[col] = e.transform(df[col])
-                df = df.apply(pd.to_numeric, errors='coerce')
-                res_idx = np.argmax(mod.predict(scl.transform(df), verbose=0), axis=1)[0]
+                    if col in df.columns and col != "NObeyesdad": df[col] = e.transform(df[col])
+                res_idx = np.argmax(mod.predict(scl.transform(df.apply(pd.to_numeric, errors='coerce')), verbose=0), axis=1)[0]
                 res_text = enc["NObeyesdad"].inverse_transform([res_idx])[0]
-                st.markdown(f'<div class="result-card"><h3>TAHMİN</h3><h2>{res_text.replace("_", " ")}</h2></div>', unsafe_allow_html=True)
+                st.success(f"Tahmin: {res_text.replace('_', ' ')}")
             except Exception as e: st.error(f"Hata: {str(e)}")
-        else: st.error("Model/Encoder Dosyaları Eksik!")
+        else: st.error("Obezite dosyaları eksik!")
