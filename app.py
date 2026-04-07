@@ -187,11 +187,167 @@ elif choice == "Meme Kanseri":
 
 # --- KALB VE OBEZİTE ---
 elif choice == "Kalp Sağlığı":
-    st.info("Tüm kardiyovasküler girişler aktif.")
-    if st.button("Kalp Analizi"):
-        st.markdown('<div class="result-card"><h2>RİSK SEVİYESİ: DÜŞÜK 🟢</h2></div>', unsafe_allow_html=True)
+    st.subheader("❤️ Kardiyovasküler Risk Analiz Formu")
+    
+    # Haritalama Sözlükleri (Modelin beklediği sayısal değerler)
+    map_genel = {'Poor': 0, 'Fair': 1, 'Good': 2, 'Very Good': 3, 'Excellent': 4}
+    map_check = {'Never': 0, '5 or more years ago': 1, 'Within the past 5 years': 2, 'Within the past 2 years': 3, 'Within the past year': 4}
+    map_diab = {'No': 0, 'No, pre-diabetes or borderline diabetes': 1, 'Yes, but female told only during pregnancy': 2, 'Yes': 3}
+    map_yas = {'18-24': 0, '25-29': 1, '30-34': 2, '35-39': 3, '40-44': 4, '45-49': 5, '50-54': 6, '55-59': 7, '60-64': 8, '65-69': 9, '70-74': 10, '75-79': 11, '80+': 12}
+    map_sex = {'Kadın': 0, 'Erkek': 1}
+
+    # 1. Kolon: Kişisel Bilgiler
+    c1, c2 = st.columns(2)
+    with c1:
+        h_sex = st.selectbox("Cinsiyet", ["Kadın", "Erkek"])
+        h_age = st.selectbox("Yaş Grubu", list(map_yas.keys()))
+        h_gen = st.selectbox("Genel Sağlık Durumunuz", list(map_genel.keys()))
+        h_height = st.number_input("Boy (cm)", 100, 220, 175)
+        h_weight = st.number_input("Kilo (kg)", 30, 200, 75)
+        h_bmi = st.number_input("BMI (Vücut Kitle İndeksi)", 10.0, 60.0, 24.5)
+        
+    with c2:
+        h_check = st.selectbox("Son Check-up Zamanı", list(map_check.keys()))
+        h_diab = st.selectbox("Diyabet Durumu", list(map_diab.keys()))
+        h_ex = st.radio("Düzenli Egzersiz?", [1, 0], format_func=lambda x: "Evet" if x==1 else "Hayır", horizontal=True)
+        h_smoke = st.radio("Sigara Kullanımı?", [1, 0], format_func=lambda x: "Evet" if x==1 else "Hayır", horizontal=True)
+        h_skin = st.radio("Cilt Kanseri Geçmişi?", [1, 0], format_func=lambda x: "Evet" if x==1 else "Hayır", horizontal=True)
+        h_other = st.radio("Diğer Kanser Geçmişi?", [1, 0], format_func=lambda x: "Evet" if x==1 else "Hayır", horizontal=True)
+        h_dep = st.radio("Depresyon Tanısı?", [1, 0], format_func=lambda x: "Evet" if x==1 else "Hayır", horizontal=True)
+        h_arth = st.radio("Artrit (Eklem İltihabı)?", [1, 0], format_func=lambda x: "Evet" if x==1 else "Hayır", horizontal=True)
+
+    # 2. Beslenme Bilgileri
+    st.markdown("---")
+    c3, c4, c5, c6 = st.columns(4)
+    h_alc = c3.number_input("Alkol Tüketimi (Gün)", 0, 30, 0)
+    h_fruit = c4.number_input("Aylık Meyve", 0, 300, 30)
+    h_veg = c5.number_input("Yeşil Sebze", 0, 300, 15)
+    h_fried = c6.number_input("Kızarmış Patates", 0, 300, 4)
+
+    if st.button("Kalp Sağlığı Analizini Başlat →"):
+        model = assets.get("heart")
+        scaler = assets.get("heart_scaler")
+        
+        if model and scaler:
+            # Girdileri Flask mantığıyla DataFrame yapıyoruz
+            input_df = pd.DataFrame({
+                'General_Health': [map_genel[h_gen]],
+                'Checkup': [map_check[h_check]],
+                'Exercise': [h_ex],
+                'Skin_Cancer': [h_skin],
+                'Other_Cancer': [h_other],
+                'Depression': [h_dep],
+                'Diabetes': [map_diab[h_diab]],
+                'Arthritis': [h_arth],
+                'Sex': [map_sex[h_sex]],
+                'Age_Category': [map_yas[h_age]],
+                'Height_(cm)': [float(h_height)],
+                'Weight_(kg)': [float(h_weight)],
+                'BMI': [float(h_bmi)],
+                'Smoking_History': [h_smoke],
+                'Alcohol_Consumption': [float(h_alc)],
+                'Fruit_Consumption': [float(h_fruit)],
+                'Green_Vegetables_Consumption': [float(h_veg)],
+                'FriedPotato_Consumption': [float(h_fried)]
+            })
+
+            # Ölçeklendirme ve Tahmin
+            input_scaled = scaler.transform(input_df)
+            prediction = model.predict(input_scaled, verbose=0)
+            risk_skoru = float(prediction[0][0])
+            risk_yuzdesi = round(risk_skoru * 100, 1)
+
+            # Sonuç Ekranı
+            if risk_skoru > 0.5:
+                res_title = "YÜKSEK RİSK TESPİT EDİLDİ 🔴"
+                res_msg = "⚠️ Sonuçlarınız ortalamanın üzerinde risk içeriyor. Lütfen bir kardiyoloji uzmanına görünün."
+                color = "#ef4444"
+            else:
+                res_title = "DÜŞÜK RİSK SEVİYESİ 🟢"
+                res_msg = "✅ Kalp sağlığı riskiniz düşük görünüyor. Sağlıklı yaşam tarzına devam edin."
+                color = "#10b981"
+
+            st.markdown(f"""
+                <div class="result-card" style="border-color: {color};">
+                    <h2 style="color: {color} !important;">{res_title}</h2>
+                    <h1 style="font-size: 50px; margin: 10px 0;">%{risk_yuzdesi}</h1>
+                    <p style="font-size: 18px;">{res_msg}</p>
+                </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.error("Hata: 'kalp_modeli.h5' veya 'scaler.pkl' dosyası yüklenemedi!")
 
 elif choice == "Obezite":
-    st.info("Obezite sınıflandırma formları aktif.")
-    if st.button("Obezite Analizi"):
-        st.markdown('<div class="result-card"><h2>TAHMİN: Normal_Weight 🟢</h2></div>', unsafe_allow_html=True)
+    st.subheader("⚖️ Obezite Sınıflandırma ve Yaşam Tarzı Analizi")
+    
+    # Giriş Alanları (2 Sütun Düzeni)
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        o_gen = st.selectbox("Gender (Cinsiyet)", ["Male", "Female"])
+        o_age = st.number_input("Age (Yaş)", 1, 100, 25)
+        o_height = st.number_input("Height (Boy - Metre)", 1.2, 2.3, 1.75)
+        o_weight = st.number_input("Weight (Kilo - kg)", 30.0, 250.0, 70.0)
+        o_fam = st.selectbox("family_history_with_overweight (Ailede Obezite)", ["yes", "no"])
+        o_favc = st.selectbox("FAVC (Yüksek Kalorili Gıda Tüketimi)", ["yes", "no"])
+        o_fcvc = st.slider("FCVC (Sebze Tüketimi Sıklığı 1-3)", 1.0, 3.0, 2.0)
+        o_ncp = st.slider("NCP (Ana Öğün Sayısı 1-4)", 1.0, 4.0, 3.0)
+
+    with c2:
+        o_caec = st.selectbox("CAEC (Öğün Arası Atıştırma)", ["Sometimes", "Frequently", "Always", "no"])
+        o_smoke = st.selectbox("SMOKE (Sigara Kullanımı)", ["yes", "no"])
+        o_ch2o = st.slider("CH2O (Günlük Su Tüketimi 1-3)", 1.0, 3.0, 2.0)
+        o_scc = st.selectbox("SCC (Kalori Takibi)", ["yes", "no"])
+        o_faf = st.slider("FAF (Fiziksel Aktivite Sıklığı 0-3)", 0.0, 3.0, 1.0)
+        o_tue = st.slider("TUE (Teknolojik Cihaz Kullanım Süresi 0-2)", 0.0, 2.0, 1.0)
+        o_calc = st.selectbox("CALC (Alkol Tüketimi)", ["Sometimes", "no", "Frequently", "Always"])
+        o_mtrans = st.selectbox("MTRANS (Ulaşım Şekli)", ["Public_Transportation", "Automobile", "Walking", "Motorbike", "Bike"])
+
+    if st.button("Obezite Analizini Başlat →"):
+        model = assets.get("obesity")
+        scaler = assets.get("obesity_scaler")
+        encoders = assets.get("obesity_encoder")
+        
+        if model and scaler and encoders:
+            try:
+                # 1. Kullanıcı verilerini bir sözlükte topla
+                input_data = {
+                    'Gender': o_gen, 'Age': o_age, 'Height': o_height, 'Weight': o_weight,
+                    'family_history_with_overweight': o_fam, 'FAVC': o_favc, 'FCVC': o_fcvc,
+                    'NCP': o_ncp, 'CAEC': o_caec, 'SMOKE': o_smoke, 'CH2O': o_ch2o,
+                    'SCC': o_scc, 'FAF': o_faf, 'TUE': o_tue, 'CALC': o_calc, 'MTRANS': o_mtrans
+                }
+
+                # 2. Veriyi DataFrame'e çevir
+                df = pd.DataFrame([input_data])
+
+                # 3. Label Encoding İşlemi (Kategorik verileri modele hazırla)
+                for col in encoders:
+                    if col in df.columns:
+                        df[col] = encoders[col].transform(df[col])
+
+                # 4. Sayısal Dönüşüm ve Ölçeklendirme
+                df = df.apply(pd.to_numeric, errors='ignore')
+                scaled_data = scaler.transform(df)
+
+                # 5. Model Tahmini
+                preds = model.predict(scaled_data, verbose=0)
+                predicted_class_idx = np.argmax(preds, axis=1)[0]
+                
+                # Sınıf ismini geri çevir (NObeyesdad sütunundan)
+                obesity_class = encoders["NObeyesdad"].inverse_transform([predicted_class_idx])[0]
+                
+                # Sonuç Renklendirme
+                res_color = "#ef4444" if "Obesity" in obesity_class else "#10b981" if "Normal" in obesity_class else "#3b82f6"
+
+                st.markdown(f"""
+                    <div class="result-card" style="border-color: {res_color};">
+                        <h3 style="color: #94a3b8; margin-bottom: 5px;">TAHMİN EDİLEN SINIF</h3>
+                        <h2 style="color: {res_color} !important; font-size: 32px; margin: 0;">{obesity_class.replace('_', ' ')}</h2>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+            except Exception as e:
+                st.error(f"⚠️ Analiz sırasında bir hata oluştu: {e}")
+        else:
+            st.error("❌ Hata: 'obesity_model.h5', 'scaler.pkl' veya 'label_encoders.pkl' dosyaları bulunamadı!")
