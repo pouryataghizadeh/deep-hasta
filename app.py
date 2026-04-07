@@ -48,7 +48,7 @@ def load_all_assets():
         "heart": "kalp_modeli.h5",
         "obesity": "obesity_model.h5"
     }
-   for k, v in m_files.items():
+    for k, v in m_files.items():
         p = get_p(v)
         if p:
             try: 
