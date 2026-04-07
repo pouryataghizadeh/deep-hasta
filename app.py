@@ -50,12 +50,7 @@ def load_all_assets():
     }
     for k, v in m_files.items():
         p = get_p(v)
-        if p:
-            try: 
-                assets[k] = tf.keras.models.load_model(p, compile=False)
-            except Exception as e: 
-                st.sidebar.error(f"❌ {v} YÜKLENEMEDİ! Detay: {e}")
-                assets[k] = None
+        if p: assets[k] = tf.keras.models.load_model(p, compile=False)
 
     # Scaler ve Encoderlar
     try:
