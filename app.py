@@ -64,24 +64,88 @@ def load_assets():
 assets = load_assets()
 
 # --- 3. GÖRSEL ANALİZ FONKSİYONU ---
-def apply_filters(img_pil, mode):
-    img_cv = np.array(img_pil.convert('RGB'))
-    gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
-    if mode == "Göğüs":
-        o1 = img_pil.filter(ImageFilter.SHARPEN)
-        o2 = ImageEnhance.Contrast(img_pil).enhance(1.5)
-        o3 = cv2.applyColorMap(gray, cv2.COLORMAP_BONE)
-        return o1, o2, o3
-    elif mode == "Beyin":
-        o1 = cv2.Canny(gray, 100, 200)
-        o2 = cv2.dilate(o1, np.ones((5,5), np.uint8))
-        o3 = cv2.applyColorMap(gray, cv2.COLORMAP_JET)
-        return o1, o2, o3
-    else:
-        o1 = cv2.equalizeHist(gray)
-        o2 = cv2.Canny(gray, 50, 150)
-        o3 = cv2.morphologyEx(o1, cv2.MORPH_GRADIENT, np.ones((5,5), np.uint8))
-        return o1, o2, o3
+# --- GÖRSEL ANALİZLER: GÖĞÜS, BEYİN VE KEMİK ---
+if choice in ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı"]:
+    up = st.file_uploader(f"{choice} İçin Görüntü Yükleyin", type=["jpg", "png", "jpeg"])
+    
+    if up:
+        img = Image.open(up)
+        col_img, col_res = st.columns([1, 1])
+        
+        with col_img:
+            st.image(img, caption="Orijinal Görüntü Kaydı", use_container_width=True)
+            
+        with col_res:
+            if st.button(f"{choice.upper()} ANALİZİNİ BAŞLAT"):
+                # Seçime göre model anahtarını ve resim boyutunu ayarla
+                m_key = "chest" if "Göğüs" in choice else "brain" if "Beyin" in choice else "fracture"
+                model = assets.get(m_key)
+                
+                if model:
+                    # 1. Görüntü Hazırlama (Preprocessing)
+                    size = (224, 224) if m_key == "brain" else (150, 150)
+                    img_resized = img.convert('RGB').resize(size)
+                    prep = np.array(img_resized) / 255.0
+                    input_data = np.expand_dims(prep, axis=0)
+                    
+                    with st.spinner("Yapay Zeka Pikselleri Analiz Ediyor..."):
+                        preds = model.predict(input_data, verbose=0)
+                    
+                    # 2. Teşhis Mantığı
+                    res_text = ""
+                    res_color = "#10b981" # Varsayılan Yeşil
+                    
+                    if m_key == "brain":
+                        # Beyin Tümörü Sınıflandırması
+                        classes = ["Glioma (Tümör) 🔴", "Meningioma (Tümör) 🔴", "Normal (Tümör Yok) 🟢", "Pituitary (Tümör) 🔴"]
+                        idx = np.argmax(preds[0])
+                        res_text = f"TEŞHİS: {classes[idx]}"
+                        res_color = "#ef4444" if idx != 2 else "#10b981"
+                        conf = preds[0][idx] * 100
+                    
+                    elif m_key == "chest":
+                        # Göğüs Pnömoni (Binary)
+                        score = preds[0][0]
+                        res_text = "PNÖMONİ TESPİT EDİLDİ 🔴" if score >= 0.5 else "AKCİĞERLER NORMAL 🟢"
+                        res_color = "#ef4444" if score >= 0.5 else "#10b981"
+                        conf = score * 100 if score >= 0.5 else (1 - score) * 100
+                        
+                    elif m_key == "fracture":
+                        # Kemik Kırığı (Binary)
+                        # Model çıktı değerine göre (0-1 arası)
+                        score = preds[0][0]
+                        res_text = "KIRIK TESPİT EDİLDİ 🔴" if score >= 0.5 else "KEMİK YAPISI SAĞLAM 🟢"
+                        res_color = "#ef4444" if score >= 0.5 else "#10b981"
+                        conf = score * 100 if score >= 0.5 else (1 - score) * 100
+
+                    # 3. Sonuç Kartı
+                    st.markdown(f"""
+                        <div class="result-card" style="border-color: {res_color};">
+                            <h3 style="color: #94a3b8; margin-bottom: 5px;">KLİNİK ANALİZ SONUCU</h3>
+                            <h2 style="color: {res_color} !important; font-size: 24px; margin: 0;">{res_text}</h2>
+                            <p style="font-size: 18px; margin-top: 10px;">Analiz Güveni: <b>%{conf:.2f}</b></p>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # 4. Üçlü Görsel Filtreler (Filtreleme kodunla aynı)
+                    st.divider()
+                    st.write("🔍 **Dijital İnceleme Katmanları:**")
+                    v1, v2, v3 = apply_filters(img, choice.split()[0])
+                    v_cols = st.columns(3)
+                    
+                    labels = {
+                        "Göğüs": ["Sharpen (Keskinlik)", "High Contrast", "BONE Map"],
+                        "Beyin": ["Canny (Kenar)", "Dilation (Doku)", "JET (Isı Haritası)"],
+                        "Kemik": ["Equalize (Denge)", "Edge Detection", "Morph Gradient"]
+                    }
+                    current_labels = labels.get(choice.split()[0], ["Filtre 1", "Filtre 2", "Filtre 3"])
+                    
+                    v_cols[0].image(v1, caption=current_labels[0], use_container_width=True)
+                    v_cols[1].image(v2, caption=current_labels[1], use_container_width=True)
+                    v_cols[2].image(v3, caption=current_labels[2], use_container_width=True)
+                    
+                else:
+                    st.error(f"Hata: {choice} modeli yüklenemedi! Lütfen dosya isimlerini kontrol edin.")
 
 # --- 4. ANA PANEL ---
 choice = st.sidebar.selectbox("Teşhis Protokolü", ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı", "Diyabet", "Kalp Sağlığı", "Meme Kanseri", "Obezite"])
