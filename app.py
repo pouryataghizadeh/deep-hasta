@@ -10,7 +10,7 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
-# --- 1. GLOBAL TASARIM (Dark Neon UI) ---
+# --- 1. GLOBAL TASARIM ---
 st.set_page_config(page_title="PHOENIX AI Multi-Diagnostic", layout="wide")
 
 st.markdown("""
@@ -32,7 +32,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. AKILLI VARLIK YÜKLEYİCİ (Hata Korumalı) ---
+# --- 2. AKILLI VARLIK YÜKLEYİCİ ---
 @st.cache_resource
 def load_all_assets():
     base = os.path.dirname(__file__)
@@ -43,7 +43,7 @@ def load_all_assets():
 
     assets = {}
     
-    # Keras/H5 Modelleri
+    # H5 / Keras Modelleri
     model_list = {
         "chest": "chest_xray_pneumonia_model.h5",
         "brain": "brain_tumor_model.h5",
@@ -62,14 +62,14 @@ def load_all_assets():
         else:
             assets[key] = None
 
-    # Diyabet (PKL Modelleri)
+    # Diyabet (PKL)
     try:
         assets["diab_model"] = joblib.load(get_p("diabetes_ann_model_v2.pkl"))
         assets["diab_pre"] = joblib.load(get_p("diabetes_preprocessor_v2.pkl"))
     except:
         assets["diab_model"] = None
 
-    # Meme Kanseri İçin Dinamik Preprocessor (Flask Mantığı)
+    # Meme Kanseri Preprocessor (CSV tabanlı)
     try:
         csv_path = get_p("Breast_Cancer.csv")
         if csv_path:
@@ -85,7 +85,10 @@ def load_all_assets():
             pre.fit(df[num_cols + cat_cols])
             assets["breast_pre"] = pre
             assets["breast_cols"] = num_cols + cat_cols
-    except:
+        else:
+            assets["breast_pre"] = None
+    except Exception as e:
+        st.sidebar.error(f"⚠️ Meme Kanseri CSV hatası: {e}")
         assets["breast_pre"] = None
 
     return assets
@@ -113,13 +116,12 @@ def get_visual_analysis(img_pil, mode):
         o3 = cv2.morphologyEx(o1, cv2.MORPH_CLOSE, np.ones((5,5), np.uint8))
         return o1, o2, o3
 
-# --- 4. YAN MENÜ VE ANA PANEL ---
+# --- 4. YAN MENÜ VE PANEL ---
 st.sidebar.title("🩺 PHOENIX Diagnostic")
 choice = st.sidebar.selectbox("Teşhis Protokolü", ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı", "Diyabet", "Meme Kanseri"])
-
 st.title(f"🚀 {choice} Analiz Paneli")
 
-# --- GÖRSEL TABANLI HASTALIKLAR ---
+# --- GÖRSEL TABANLI ---
 if choice in ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı"]:
     up = st.file_uploader("Görüntü Dosyasını Yükleyin", type=["jpg", "png", "jpeg"])
     if up:
@@ -127,14 +129,13 @@ if choice in ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı"]:
         c1, c2 = st.columns([1, 1])
         with c1: st.image(img, caption="Orijinal Görüntü", use_container_width=True)
         with c2:
-            if st.button("ANALİZİ BAŞLAT →"):
+            if st.button("ANALİZİ BAŞLAT"):
                 m_key = "chest" if "Göğüs" in choice else "brain" if "Beyin" in choice else "fracture"
                 model = assets.get(m_key)
                 if model:
                     size = (224, 224) if m_key == "brain" else (150, 150)
                     prep = np.array(img.convert('RGB').resize(size)) / 255.0
                     preds = model.predict(np.expand_dims(prep, axis=0), verbose=0)
-                    
                     if m_key == "brain":
                         cl = ["glioma", "meningioma", "notumor", "pituitary"]; idx = np.argmax(preds[0])
                         res = f"TEŞHİS: {cl[idx].upper()} (%{preds[0][idx]*100:.2f})"
@@ -144,15 +145,14 @@ if choice in ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı"]:
                     else:
                         score = (100 - preds[0][0]*100)
                         res = "KIRIK TESPİT EDİLDİ 🔴" if score >= 50 else "KIRIKSIZ 🟢"
-                    
                     st.markdown(f'<div class="result-card"><h2>{res}</h2></div>', unsafe_allow_html=True)
                     st.divider()
                     v1, v2, v3 = get_visual_analysis(img, choice.split()[0])
                     v_cols = st.columns(3)
                     for i, v_img in enumerate([v1, v2, v3]): v_cols[i].image(v_img, use_container_width=True)
-                else: st.error("Model dosyası bulunamadı!")
+                else: st.error("Model yüklenemedi!")
 
-# --- DİYABET GERÇEK ANALİZ ---
+# --- DİYABET ---
 elif choice == "Diyabet":
     c1, c2 = st.columns(2)
     with c1:
@@ -163,20 +163,21 @@ elif choice == "Diyabet":
     with c2:
         smoke = st.selectbox("Sigara Geçmişi", ["never", "current", "former", "ever", "not current"])
         bmi = st.number_input("BMI", 10.0, 70.0, 28.0)
-        hba = st.number_input("HbA1c Seviyesi", 3.0, 15.0, 6.0)
-        glu = st.number_input("Kan Glikoz Seviyesi", 50, 400, 110)
+        hba = st.number_input("HbA1c", 3.0, 15.0, 6.0)
+        glu = st.number_input("Kan Glikoz", 50, 400, 110)
     
-    if st.button("Diyabet Analizini Başlat →"):
-        if assets["diab_model"]:
+    if st.button("Diyabet Analizini Başlat"):
+        model, pre = assets.get("diab_model"), assets.get("diab_pre")
+        if model and pre:
             df = pd.DataFrame([[gender, age, hyp, heart, smoke, bmi, hba, glu]], columns=['gender','age','hypertension','heart_disease','smoking_history','bmi','HbA1c_level','blood_glucose_level'])
-            processed = assets["diab_pre"].transform(df)
-            pred = assets["diab_model"].predict(processed)[0]
-            prob = assets["diab_model"].predict_proba(processed)[0][1] * 100
+            processed = pre.transform(df)
+            pred = model.predict(processed)[0]
+            prob = model.predict_proba(processed)[0][1] * 100
             res = "DİYABET RİSKİ VAR 🔴" if pred == 1 else "RİSK BULUNMADI 🟢"
             st.markdown(f'<div class="result-card"><h2>{res}</h2><p>Olasılık: %{prob:.2f}</p></div>', unsafe_allow_html=True)
-        else: st.error("Diyabet modeli yüklü değil!")
+        else: st.error("Diyabet model dosyaları eksik!")
 
-# --- MEME KANSERİ GERÇEK ANALİZ ---
+# --- MEME KANSERİ (Çökme Engellenmiş Versiyon) ---
 elif choice == "Meme Kanseri":
     c1, c2 = st.columns(2)
     with c1:
@@ -197,13 +198,19 @@ elif choice == "Meme Kanseri":
         m_est = st.selectbox("Estrogen Status", ["Positive", "Negative"])
         m_pro = st.selectbox("Progesterone Status", ["Positive", "Negative"])
 
-    if st.button("Meme Kanseri Analizini Başlat →"):
-        if assets["breast_model"] and assets["breast_pre"]:
+    if st.button("Meme Kanseri Analizini Başlat"):
+        # assets.get() kullanarak KeyError'dan kurtuluyoruz
+        b_model = assets.get("breast_model")
+        b_pre = assets.get("breast_pre")
+        b_cols = assets.get("breast_cols")
+
+        if b_model and b_pre:
             input_df = pd.DataFrame([[m_age, m_t_size, m_ex, m_pos, m_surv, m_race, m_mar, m_t, m_n, m_6th, m_diff, m_grade, m_astage, m_est, m_pro]], 
-                                    columns=assets["breast_cols"])
-            processed = assets["breast_pre"].transform(input_df)
-            prob = assets["breast_model"].predict(processed)[0][0]
+                                    columns=b_cols)
+            processed = b_pre.transform(input_df)
+            prob = b_model.predict(processed)[0][0]
             status = "DEAD (VEFAT) 🔴" if prob < 0.5 else "ALIVE (HAYATTA) 🟢"
             color = "#ef4444" if prob < 0.5 else "#10b981"
             st.markdown(f'<div class="result-card" style="border-color:{color}"><h2 style="color:{color} !important;">{status}</h2><p>Güven: %{prob*100 if prob>0.5 else (1-prob)*100:.2f}</p></div>', unsafe_allow_html=True)
-        else: st.error("Meme kanseri modeli veya Breast_Cancer.csv dosyası eksik!")
+        else:
+            st.error("Hata: Meme kanseri modeli veya 'Breast_Cancer.csv' bulunamadı. Lütfen GitHub'a yüklediğinizden emin olun!")
