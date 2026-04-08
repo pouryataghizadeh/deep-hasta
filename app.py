@@ -111,7 +111,7 @@ if choice in ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı"]:
                         color = "#ef4444" if idx != 2 else "#10b981"
                     else:
                         score = preds[0][0]
-                        res = "RİSK TESPİT EDİLDİ 🔴" if score > 0.5 else "DURUM NORMAL 🟢"
+                        res = "RİSK TESPİT EDİLDİ 🔴" if score > 0.4 else "DURUM NORMAL 🟢"
                         color = "#ef4444" if score > 0.5 else "#10b981"
                     
                     st.markdown(f'<div class="result-card" style="border-color:{color}"><h2>{res}</h2></div>', unsafe_allow_html=True)
