@@ -109,7 +109,7 @@ if choice in ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı"]:
                         idx = np.argmax(preds[0])
                         res = f"TEŞHİS: {classes[idx]}"
                         color = "#ef4444" if idx != 2 else "#10b981"
-                   else:
+                    else:
                         # En yüksek olasılıklı sınıfın indeksini bulur (0 veya 1)
                         idx = np.argmax(preds[0])
                         
