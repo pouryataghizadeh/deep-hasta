@@ -162,19 +162,25 @@ elif choice == "Diyabet":
 
 # --- KALP SAĞLIĞI ---
 elif choice == "Kalp Sağlığı":
+
+    # --- MAPPING ---
     map_genel = {'Poor': 0, 'Fair': 1, 'Good': 2, 'Very Good': 3, 'Excellent': 4}
     map_check = {'Never': 0, '5 or more years ago': 1, 'Within the past 5 years': 2, 'Within the past 2 years': 3, 'Within the past year': 4}
     map_diab = {'No': 0, 'No, pre-diabetes or borderline diabetes': 1, 'Yes, but female told only during pregnancy': 2, 'Yes': 3}
     map_yas = {'18-24': 0, '25-29': 1, '30-34': 2, '35-39': 3, '40-44': 4, '45-49': 5, '50-54': 6, '55-59': 7, '60-64': 8, '65-69': 9, '70-74': 10, '75-79': 11, '80+': 12}
     map_sex = {'Kadın': 0, 'Erkek': 1}
+
+    # --- UI ---
     c1, c2 = st.columns(2)
+
     with c1:
         h_sex = st.selectbox("Cinsiyet", ["Kadın", "Erkek"])
         h_age = st.selectbox("Yaş Grubu", list(map_yas.keys()))
         h_gen = st.selectbox("Genel Sağlık", list(map_genel.keys()))
         h_height = st.number_input("Boy (cm)", 100, 220, 175)
         h_weight = st.number_input("Kilo (kg)", 30, 200, 75)
-        h_bmi = st.number_input("BMI (Kalp)", 10.0, 60.0, 24.5)
+        h_bmi = st.number_input("BMI", 10.0, 60.0, 24.5)
+
     with c2:
         h_check = st.selectbox("Check-up", list(map_check.keys()))
         h_diab = st.selectbox("Diyabet Durumu", list(map_diab.keys()))
@@ -184,17 +190,95 @@ elif choice == "Kalp Sağlığı":
         h_other = st.radio("Diğer Kanser?", [1, 0], horizontal=True)
         h_dep = st.radio("Depresyon?", [1, 0], horizontal=True)
         h_arth = st.radio("Artrit?", [1, 0], horizontal=True)
-    c3, c4, c5, c6 = st.columns(4)
-    h_alc = c3.number_input("Alkol", 0, 30, 0); h_fruit = c4.number_input("Meyve", 0, 300, 30); h_veg = c5.number_input("Sebze", 0, 300, 15); h_fried = c6.number_input("Patates", 0, 300, 4)
-    
-    if st.button("Kalp Sağlığı Analizini Başlat →"):
-        mod, scl = assets.get("heart"), assets.get("heart_scaler")
-        if mod and scl:
-            df = pd.DataFrame({'General_Health':[map_genel[h_gen]],'Checkup':[map_check[h_check]],'Exercise':[h_ex],'Skin_Cancer':[h_skin],'Other_Cancer':[h_other],'Depression':[h_dep],'Diabetes':[map_diab[h_diab]],'Arthritis':[h_arth],'Sex':[map_sex[h_sex]],'Age_Category':[map_yas[h_age]],'Height_(cm)':[float(h_height)],'Weight_(kg)':[float(h_weight)],'BMI':[float(h_bmi)],'Smoking_History':[h_smoke],'Alcohol_Consumption':[float(h_alc)],'Fruit_Consumption':[float(h_fruit)],'Green_Vegetables_Consumption':[float(h_veg)],'FriedPotato_Consumption':[float(h_fried)]})
-            prob = mod.predict(scl.transform(df), verbose=0)[0][0]
-            color = "#ef4444" if prob > 0.5 else "#10b981"
-            st.markdown(f'<div class="result-card" style="border-color:{color}"><h2>{"YÜKSEK RİSK 🔴" if prob > 0.5 else "DÜŞÜK RİSK 🟢"}</h2><h1>%{prob*100:.1f}</h1></div>', unsafe_allow_html=True)
 
+    c3, c4, c5, c6 = st.columns(4)
+    h_alc = c3.number_input("Alkol", 0, 30, 0)
+    h_fruit = c4.number_input("Meyve", 0, 300, 30)
+    h_veg = c5.number_input("Sebze", 0, 300, 15)
+    h_fried = c6.number_input("Patates", 0, 300, 4)
+
+    # --- ANALİZ ---
+    if st.button("Kalp Sağlığı Analizini Başlat →"):
+
+        mod = assets.get("heart")
+        scl = assets.get("heart_scaler")
+
+        if not mod or not scl:
+            st.error("Model veya scaler bulunamadı!")
+        else:
+            try:
+                # 🚨 FEATURE ORDER KRİTİK
+                df = pd.DataFrame([[
+                    map_genel[h_gen],
+                    map_check[h_check],
+                    h_ex,
+                    h_skin,
+                    h_other,
+                    h_dep,
+                    map_diab[h_diab],
+                    h_arth,
+                    map_sex[h_sex],
+                    map_yas[h_age],
+                    float(h_height),
+                    float(h_weight),
+                    float(h_bmi),
+                    h_smoke,
+                    float(h_alc),
+                    float(h_fruit),
+                    float(h_veg),
+                    float(h_fried)
+                ]], columns=[
+                    'General_Health',
+                    'Checkup',
+                    'Exercise',
+                    'Skin_Cancer',
+                    'Other_Cancer',
+                    'Depression',
+                    'Diabetes',
+                    'Arthritis',
+                    'Sex',
+                    'Age_Category',
+                    'Height_(cm)',
+                    'Weight_(kg)',
+                    'BMI',
+                    'Smoking_History',
+                    'Alcohol_Consumption',
+                    'Fruit_Consumption',
+                    'Green_Vegetables_Consumption',
+                    'FriedPotato_Consumption'
+                ])
+
+                # SCALE
+                X = scl.transform(df)
+
+                # PREDICT
+                prob = float(mod.predict(X, verbose=0)[0][0])
+
+                # --- RISK LEVEL ---
+                if prob < 0.3:
+                    risk_text = "DÜŞÜK RİSK 🟢"
+                    color = "#10b981"
+                    advice = "Yaşam tarzınız iyi görünüyor. Devam edin."
+                elif prob < 0.6:
+                    risk_text = "ORTA RİSK 🟡"
+                    color = "#f59e0b"
+                    advice = "Beslenme ve egzersize dikkat etmelisiniz."
+                else:
+                    risk_text = "YÜKSEK RİSK 🔴"
+                    color = "#ef4444"
+                    advice = "Bir doktora danışmanız önerilir."
+
+                # --- OUTPUT ---
+                st.markdown(f"""
+                <div class="result-card" style="border-color:{color}">
+                    <h2>{risk_text}</h2>
+                    <h1>%{prob*100:.1f}</h1>
+                    <p style="opacity:0.8">{advice}</p>
+                </div>
+                """, unsafe_allow_html=True)
+
+            except Exception as e:
+                st.error(f"Hata oluştu: {str(e)}")
 # --- MEME KANSERİ ---
 elif choice == "Meme Kanseri":
     c1, c2, c3 = st.columns(3)
