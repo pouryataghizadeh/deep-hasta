@@ -163,7 +163,7 @@ elif choice == "Diyabet":
 # --- KALP SAĞLIĞI ---
 elif choice == "Kalp Sağlığı":
 
-    # --- MAPPING ---
+    # --- MAPPING (TRAIN İLE BİREBİR AYNI) ---
     map_genel = {'Poor': 0, 'Fair': 1, 'Good': 2, 'Very Good': 3, 'Excellent': 4}
     map_check = {'Never': 0, '5 or more years ago': 1, 'Within the past 5 years': 2, 'Within the past 2 years': 3, 'Within the past year': 4}
     map_diab = {'No': 0, 'No, pre-diabetes or borderline diabetes': 1, 'Yes, but female told only during pregnancy': 2, 'Yes': 3}
@@ -200,15 +200,15 @@ elif choice == "Kalp Sağlığı":
     # --- ANALİZ ---
     if st.button("Kalp Sağlığı Analizini Başlat →"):
 
-        mod = assets.get("heart")
-        scl = assets.get("heart_scaler")
+        mod = assets.get("heart")            # kalp_modeli.h5
+        scl = assets.get("heart_scaler")     # scaler.pkl
 
         if not mod or not scl:
             st.error("Model veya scaler bulunamadı!")
         else:
             try:
-                # 🚨 FEATURE ORDER KRİTİK
-                df = pd.DataFrame([[
+                # 🚨 TRAIN İLE %100 AYNI FEATURE ORDER
+                data = [[
                     map_genel[h_gen],
                     map_check[h_check],
                     h_ex,
@@ -227,7 +227,9 @@ elif choice == "Kalp Sağlığı":
                     float(h_fruit),
                     float(h_veg),
                     float(h_fried)
-                ]], columns=[
+                ]]
+
+                columns = [
                     'General_Health',
                     'Checkup',
                     'Exercise',
@@ -246,39 +248,44 @@ elif choice == "Kalp Sağlığı":
                     'Fruit_Consumption',
                     'Green_Vegetables_Consumption',
                     'FriedPotato_Consumption'
-                ])
+                ]
 
-                # SCALE
+                df = pd.DataFrame(data, columns=columns)
+
+                # --- SCALE ---
                 X = scl.transform(df)
 
-                # PREDICT
+                # --- PREDICT ---
                 prob = float(mod.predict(X, verbose=0)[0][0])
 
-                # --- RISK LEVEL ---
+                # 🔥 STABILIZE (çok uç değerleri dengeler)
+                prob = np.clip(prob, 0.001, 0.999)
+
+                # --- RISK LOGIC ---
                 if prob < 0.3:
-                    risk_text = "DÜŞÜK RİSK 🟢"
+                    risk = "DÜŞÜK RİSK 🟢"
                     color = "#10b981"
                     advice = "Yaşam tarzınız iyi görünüyor. Devam edin."
                 elif prob < 0.6:
-                    risk_text = "ORTA RİSK 🟡"
+                    risk = "ORTA RİSK 🟡"
                     color = "#f59e0b"
                     advice = "Beslenme ve egzersize dikkat etmelisiniz."
                 else:
-                    risk_text = "YÜKSEK RİSK 🔴"
+                    risk = "YÜKSEK RİSK 🔴"
                     color = "#ef4444"
                     advice = "Bir doktora danışmanız önerilir."
 
                 # --- OUTPUT ---
                 st.markdown(f"""
                 <div class="result-card" style="border-color:{color}">
-                    <h2>{risk_text}</h2>
+                    <h2>{risk}</h2>
                     <h1>%{prob*100:.1f}</h1>
-                    <p style="opacity:0.8">{advice}</p>
+                    <p style="opacity:0.85">{advice}</p>
                 </div>
                 """, unsafe_allow_html=True)
 
             except Exception as e:
-                st.error(f"Hata oluştu: {str(e)}")
+                st.error(f"Hata: {str(e)}")
 # --- MEME KANSERİ ---
 elif choice == "Meme Kanseri":
     c1, c2, c3 = st.columns(3)
