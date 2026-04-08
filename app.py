@@ -39,24 +39,22 @@ def load_all_assets():
         return None
 
     assets = {}
-    # Modeller (.h5 ve .keras)
+    # Modeller (.h5 ve .keras) - Kalp modeli çıkarıldı
     m_files = {
         "chest": "chest_xray_pneumonia_model.h5",
         "brain": "brain_tumor_model.h5",
         "fracture": "best_fracture_detector_model.keras",
         "breast": "breast_cancer_model.h5",
-        "heart": "kalp_modeli.h5",
         "obesity": "obesity_model.h5"
     }
     for k, v in m_files.items():
         p = get_p(v)
         if p: assets[k] = tf.keras.models.load_model(p, compile=False)
 
-    # Scaler ve Encoderlar
+    # Scaler ve Encoderlar - Kalp scaler çıkarıldı
     try:
         assets["diab_model"] = joblib.load(get_p("diabetes_ann_model_v2.pkl"))
         assets["diab_pre"] = joblib.load(get_p("diabetes_preprocessor_v2.pkl"))
-        assets["heart_scaler"] = joblib.load(get_p("scaler.pkl"))
         assets["obesity_scaler"] = joblib.load(get_p("obesity_scaler.pkl")) or joblib.load(get_p("scaler2.pkl"))
         assets["obesity_encoder"] = joblib.load(get_p("label_encoders.pkl"))
     except: pass
@@ -85,7 +83,8 @@ def apply_filters(img_pil, mode):
         return o1, o2, o3
 
 # --- 4. ANA PANEL VE SEÇİMLER ---
-choice = st.sidebar.selectbox("Teşhis Protokolü", ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı", "Diyabet", "Kalp Sağlığı", "Meme Kanseri", "Obezite"])
+# Kalp Sağlığı menüden çıkarıldı
+choice = st.sidebar.selectbox("Teşhis Protokolü", ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı", "Diyabet", "Meme Kanseri", "Obezite"])
 st.title(f"🏥 {choice} Analiz İstasyonu")
 
 # --- GÖRSEL TABANLI (GÖĞÜS, BEYİN, KEMİK) ---
@@ -110,7 +109,6 @@ if choice in ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı"]:
                         res = f"TEŞHİS: {classes[idx]}"
                         color = "#ef4444" if idx != 2 else "#10b981"
                     
-                    # ESKİ FLASK UYGULAMASINDAKİ KEMİK KIRIĞI MANTIĞI BURAYA EKLENDİ
                     elif m_key == "fracture":
                         score = preds[0][0]
                         non_fractured_probability = score * 100 
@@ -123,7 +121,6 @@ if choice in ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı"]:
                             res = f"DURUM NORMAL 🟢 (Sağlamlık: %{non_fractured_probability:.1f})"
                             color = "#10b981"
                             
-                    # GÖĞÜS İÇİN ESKİ MANTIK KORUNDU
                     else: 
                         score = preds[0][0]
                         res = "RİSK TESPİT EDİLDİ 🔴" if score > 0.4 else "DURUM NORMAL 🟢"
@@ -160,132 +157,6 @@ elif choice == "Diyabet":
             status = "RİSK VAR 🔴" if prob > 0.5 else "RİSK YOK 🟢"
             st.markdown(f'<div class="result-card"><h2>{status}</h2><p>Olasılık: %{prob*100:.2f}</p></div>', unsafe_allow_html=True)
 
-# --- KALP SAĞLIĞI ---
-elif choice == "Kalp Sağlığı":
-
-    # --- MAPPING (TRAIN İLE BİREBİR AYNI) ---
-    map_genel = {'Poor': 0, 'Fair': 1, 'Good': 2, 'Very Good': 3, 'Excellent': 4}
-    map_check = {'Never': 0, '5 or more years ago': 1, 'Within the past 5 years': 2, 'Within the past 2 years': 3, 'Within the past year': 4}
-    map_diab = {'No': 0, 'No, pre-diabetes or borderline diabetes': 1, 'Yes, but female told only during pregnancy': 2, 'Yes': 3}
-    map_yas = {'18-24': 0, '25-29': 1, '30-34': 2, '35-39': 3, '40-44': 4, '45-49': 5, '50-54': 6, '55-59': 7, '60-64': 8, '65-69': 9, '70-74': 10, '75-79': 11, '80+': 12}
-    map_sex = {'Kadın': 0, 'Erkek': 1}
-
-    # --- UI ---
-    c1, c2 = st.columns(2)
-
-    with c1:
-        h_sex = st.selectbox("Cinsiyet", ["Kadın", "Erkek"])
-        h_age = st.selectbox("Yaş Grubu", list(map_yas.keys()))
-        h_gen = st.selectbox("Genel Sağlık", list(map_genel.keys()))
-        h_height = st.number_input("Boy (cm)", 100, 220, 175)
-        h_weight = st.number_input("Kilo (kg)", 30, 200, 75)
-        h_bmi = st.number_input("BMI", 10.0, 60.0, 24.5)
-
-    with c2:
-        h_check = st.selectbox("Check-up", list(map_check.keys()))
-        h_diab = st.selectbox("Diyabet Durumu", list(map_diab.keys()))
-        h_ex = st.radio("Egzersiz?", [1, 0], horizontal=True)
-        h_smoke = st.radio("Sigara?", [1, 0], horizontal=True)
-        h_skin = st.radio("Cilt Kanseri?", [1, 0], horizontal=True)
-        h_other = st.radio("Diğer Kanser?", [1, 0], horizontal=True)
-        h_dep = st.radio("Depresyon?", [1, 0], horizontal=True)
-        h_arth = st.radio("Artrit?", [1, 0], horizontal=True)
-
-    c3, c4, c5, c6 = st.columns(4)
-    h_alc = c3.number_input("Alkol", 0, 30, 0)
-    h_fruit = c4.number_input("Meyve", 0, 300, 30)
-    h_veg = c5.number_input("Sebze", 0, 300, 15)
-    h_fried = c6.number_input("Patates", 0, 300, 4)
-
-    # --- ANALİZ ---
-    if st.button("Kalp Sağlığı Analizini Başlat →"):
-
-        mod = assets.get("heart")            # kalp_modeli.h5
-        scl = assets.get("heart_scaler")     # scaler.pkl
-
-        if not mod or not scl:
-            st.error("Model veya scaler bulunamadı!")
-        else:
-            try:
-                # 🚨 TRAIN İLE %100 AYNI FEATURE ORDER
-                data = [[
-                    map_genel[h_gen],
-                    map_check[h_check],
-                    h_ex,
-                    h_skin,
-                    h_other,
-                    h_dep,
-                    map_diab[h_diab],
-                    h_arth,
-                    map_sex[h_sex],
-                    map_yas[h_age],
-                    float(h_height),
-                    float(h_weight),
-                    float(h_bmi),
-                    h_smoke,
-                    float(h_alc),
-                    float(h_fruit),
-                    float(h_veg),
-                    float(h_fried)
-                ]]
-
-                columns = [
-                    'General_Health',
-                    'Checkup',
-                    'Exercise',
-                    'Skin_Cancer',
-                    'Other_Cancer',
-                    'Depression',
-                    'Diabetes',
-                    'Arthritis',
-                    'Sex',
-                    'Age_Category',
-                    'Height_(cm)',
-                    'Weight_(kg)',
-                    'BMI',
-                    'Smoking_History',
-                    'Alcohol_Consumption',
-                    'Fruit_Consumption',
-                    'Green_Vegetables_Consumption',
-                    'FriedPotato_Consumption'
-                ]
-
-                df = pd.DataFrame(data, columns=columns)
-
-                # --- SCALE ---
-                X = scl.transform(df)
-
-                # --- PREDICT ---
-                prob = float(mod.predict(X, verbose=0)[0][0])
-
-                # 🔥 STABILIZE (çok uç değerleri dengeler)
-                prob = np.clip(prob, 0.001, 0.999)
-
-                # --- RISK LOGIC ---
-                if prob < 0.3:
-                    risk = "DÜŞÜK RİSK 🟢"
-                    color = "#10b981"
-                    advice = "Yaşam tarzınız iyi görünüyor. Devam edin."
-                elif prob < 0.6:
-                    risk = "ORTA RİSK 🟡"
-                    color = "#f59e0b"
-                    advice = "Beslenme ve egzersize dikkat etmelisiniz."
-                else:
-                    risk = "YÜKSEK RİSK 🔴"
-                    color = "#ef4444"
-                    advice = "Bir doktora danışmanız önerilir."
-
-                # --- OUTPUT ---
-                st.markdown(f"""
-                <div class="result-card" style="border-color:{color}">
-                    <h2>{risk}</h2>
-                    <h1>%{prob*100:.1f}</h1>
-                    <p style="opacity:0.85">{advice}</p>
-                </div>
-                """, unsafe_allow_html=True)
-
-            except Exception as e:
-                st.error(f"Hata: {str(e)}")
 # --- MEME KANSERİ ---
 elif choice == "Meme Kanseri":
     c1, c2, c3 = st.columns(3)
