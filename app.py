@@ -55,7 +55,7 @@ def load_all_assets():
     try:
         assets["diab_model"] = joblib.load(get_p("diabetes_ann_model_v2.pkl"))
         assets["diab_pre"] = joblib.load(get_p("diabetes_preprocessor_v2.pkl"))
-        assets["obesity_scaler"] = joblib.load(get_p("obesity_scaler.pkl")) or joblib.load(get_p("scaler2.pkl"))
+        assets["obesity_scaler"] = joblib.load(get_p("scaler2.pkl"))
         assets["obesity_encoder"] = joblib.load(get_p("label_encoders.pkl"))
     except: pass
     return assets
