@@ -8,25 +8,110 @@ import joblib
 from PIL import Image, ImageEnhance, ImageFilter
 
 # --- 1. GLOBAL TASARIM ---
-st.set_page_config(page_title="PHOENIX AI Multi-Diagnostic", layout="wide")
+st.set_page_config(page_title="MedAI PRO", layout="wide", initial_sidebar_state="expanded")
 
+# Arayüzü tam olarak fotoğraftaki gibi yapmak için gelişmiş CSS ve Header enjeksiyonu
 st.markdown("""
     <style>
-    .stApp { background-color: #0f172a; color: #f1f5f9; }
-    [data-testid="stSidebar"] { background-color: #1e293b; border-right: 1px solid #3b82f6; }
-    .result-card {
-        padding: 30px; border-radius: 20px; border: 2px solid #3b82f6;
-        background: rgba(30, 41, 59, 0.9); margin: 20px 0; text-align: center;
-        box-shadow: 0 10px 30px rgba(59, 130, 246, 0.2);
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+
+    html, body, [class*="css"] { 
+        font-family: 'Inter', sans-serif !important; 
     }
+
+    /* Ana Arka Plan ve Metin Rengi (Koyu Tema) */
+    .stApp { background-color: #0b0f19; color: #94a3b8; }
+    
+    /* Yan Menü (Sidebar) Koyu Tonları */
+    [data-testid="stSidebar"] { background-color: #111623; border-right: 1px solid #1e293b; }
+    
+    /* MedAI PRO Header Bar (Fotoğraftaki Sol Üst Logo) */
+    .top-bar-container {
+        display: flex;
+        align-items: center;
+        background-color: #0b0f19;
+        padding: 10px 0px 30px 0px;
+        margin-top: -40px;
+    }
+    .medai-logo {
+        color: #38bdf8;
+        font-size: 24px;
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        letter-spacing: 1px;
+    }
+    .medai-logo-icon {
+        background-color: #38bdf8;
+        width: 14px; height: 14px;
+        border-radius: 50%; margin-right: 12px;
+        box-shadow: 0 0 12px #38bdf8;
+    }
+
+    /* Fotoğraftaki Kart Tasarımı */
+    .result-card {
+        padding: 30px; 
+        border-radius: 12px; 
+        border: 1px solid #1e293b;
+        background: #151b2b; 
+        margin: 20px 0; 
+        text-align: center;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+        transition: all 0.3s ease;
+    }
+    .result-card:hover {
+        border-color: #38bdf8;
+        box-shadow: 0 8px 30px rgba(56, 189, 248, 0.12);
+        transform: translateY(-3px);
+    }
+    
     .img-label { color: #60a5fa; font-weight: 800; font-size: 13px; text-align: center; text-transform: uppercase; margin-bottom:10px; }
-    h1, h2, h3 { color: #3b82f6 !important; font-weight: 800; }
+    h1, h2, h3 { color: #f1f5f9 !important; font-weight: 800; }
+    
+    /* "Analizi Başlat >" Tarzı Butonlar (Şeffaf içi boş, kenarlıklı, hover parlama efektli) */
     .stButton>button {
-        width: 100%; background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
-        color: #000; border-radius: 14px; padding: 18px; font-weight: 800; border: none; font-size: 1.1rem;
+        width: 100%; 
+        background-color: transparent !important;
+        color: #38bdf8 !important; 
+        border-radius: 8px; 
+        padding: 16px; 
+        font-weight: 600; 
+        border: 1px solid #38bdf8 !important; 
+        font-size: 1.05rem;
+        transition: all 0.3s ease;
+    }
+    .stButton>button:hover {
+        background-color: #38bdf8 !important;
+        color: #0b0f19 !important;
+        box-shadow: 0 0 15px rgba(56, 189, 248, 0.3);
+    }
+
+    /* Dosya Yükleyici Alanı Estetiği */
+    [data-testid="stFileUploader"] {
+        background-color: #151b2b;
+        border: 1px dashed #38bdf8;
+        border-radius: 12px;
+        padding: 20px;
+        transition: 0.3s;
+    }
+    [data-testid="stFileUploader"]:hover { background-color: #1a2235; }
+    
+    /* Girdi Kutuları (Selectbox, Input vb.) Karanlık Mod Desteği */
+    .stSelectbox>div>div, .stNumberInput>div>div, .stSlider>div>div {
+        background-color: #151b2b !important;
+        color: #f1f5f9 !important;
+        border-radius: 8px;
+        border: 1px solid #1e293b;
     }
     </style>
+    
+    <div class="top-bar-container">
+        <div class="medai-logo">
+            <div class="medai-logo-icon"></div> MedAI PRO
+        </div>
+    </div>
     """, unsafe_allow_html=True)
+
 
 # --- 2. TÜM VARLIKLARIN YÜKLENMESİ ---
 @st.cache_resource
@@ -85,7 +170,7 @@ def apply_filters(img_pil, mode):
 # --- 4. ANA PANEL VE SEÇİMLER ---
 # Kalp Sağlığı menüden çıkarıldı
 choice = st.sidebar.selectbox("Teşhis Protokolü", ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı", "Diyabet", "Meme Kanseri", "Obezite"])
-st.title(f"🏥 {choice} Analiz İstasyonu")
+st.title(f"Klinik Operasyon Paneli: {choice}")
 
 # --- GÖRSEL TABANLI (GÖĞÜS, BEYİN, KEMİK) ---
 if choice in ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı"]:
@@ -149,7 +234,7 @@ elif choice == "Diyabet":
     hba = st.number_input("HbA1c Seviyesi", 3.0, 15.0, 5.5)
     glu = st.number_input("Kan Glikoz Seviyesi", 50, 500, 120)
 
-    if st.button("Diyabet Risk Analizi"):
+    if st.button("Diyabet Risk Analizini Başlat"):
         mod, pre = assets.get("diab_model"), assets.get("diab_pre")
         if mod and pre:
             df = pd.DataFrame([[gender, age, hyp, heart, smoke, bmi, hba, glu]], columns=['gender','age','hypertension','heart_disease','smoking_history','bmi','HbA1c_level','blood_glucose_level'])
@@ -191,6 +276,6 @@ elif choice == "Obezite":
                     if col in df.columns and col != "NObeyesdad": df[col] = e.transform(df[col])
                 res_idx = np.argmax(mod.predict(scl.transform(df.apply(pd.to_numeric, errors='coerce')), verbose=0), axis=1)[0]
                 res_text = enc["NObeyesdad"].inverse_transform([res_idx])[0]
-                st.success(f"Tahmin: {res_text.replace('_', ' ')}")
+                st.markdown(f'<div class="result-card" style="border-color:#38bdf8"><h2>Tahmin: {res_text.replace("_", " ")}</h2></div>', unsafe_allow_html=True)
             except Exception as e: st.error(f"Hata: {str(e)}")
         else: st.error("Obezite dosyaları eksik!")
