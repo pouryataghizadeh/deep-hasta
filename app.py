@@ -8,8 +8,8 @@ import joblib
 from PIL import Image, ImageEnhance, ImageFilter
 
 # --- 1. GLOBAL TASARIM ---
-
 st.set_page_config(page_title="PHOENIX AI Multi-Diagnostic", layout="wide")
+
 st.markdown("""
     <style>
     .stApp { background-color: #0f172a; color: #f1f5f9; }
@@ -26,10 +26,9 @@ st.markdown("""
         color: #000; border-radius: 14px; padding: 18px; font-weight: 800; border: none; font-size: 1.1rem;
     }
     </style>
-
     """, unsafe_allow_html=True)
-# --- 2. TÜM VARLIKLARIN YÜKLENMESİ ---
 
+# --- 2. TÜM VARLIKLARIN YÜKLENMESİ ---
 @st.cache_resource
 def load_all_assets():
     base = os.path.dirname(__file__)
@@ -48,12 +47,11 @@ def load_all_assets():
         "breast": "breast_cancer_model.h5",
         "obesity": "obesity_model.h5"
     }
-
     for k, v in m_files.items():
         p = get_p(v)
         if p: assets[k] = tf.keras.models.load_model(p, compile=False)
-    # Scaler ve Encoderlar - Kalp scaler çıkarıldı
 
+    # Scaler ve Encoderlar - Kalp scaler çıkarıldı
     try:
         assets["diab_model"] = joblib.load(get_p("diabetes_ann_model_v2.pkl"))
         assets["diab_pre"] = joblib.load(get_p("diabetes_preprocessor_v2.pkl"))
@@ -61,10 +59,10 @@ def load_all_assets():
         assets["obesity_encoder"] = joblib.load(get_p("label_encoders.pkl"))
     except: pass
     return assets
+
 assets = load_all_assets()
 
 # --- 3. GÖRSEL FİLTRELEME FONKSİYONU ---
-
 def apply_filters(img_pil, mode):
     img_cv = np.array(img_pil.convert('RGB'))
     gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
@@ -83,12 +81,12 @@ def apply_filters(img_pil, mode):
         o2 = cv2.Canny(gray, 50, 150)
         o3 = cv2.morphologyEx(o1, cv2.MORPH_GRADIENT, np.ones((5,5), np.uint8))
         return o1, o2, o3
+
 # --- 4. ANA PANEL VE SEÇİMLER ---
-
 # Kalp Sağlığı menüden çıkarıldı
-
 choice = st.sidebar.selectbox("Teşhis Protokolü", ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı", "Diyabet", "Meme Kanseri", "Obezite"])
 st.title(f"🏥 {choice} Analiz İstasyonu")
+
 # --- GÖRSEL TABANLI (GÖĞÜS, BEYİN, KEMİK) ---
 if choice in ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı"]:
     up = st.file_uploader("Görüntü Dosyasını Yükleyin", type=["jpg", "png", "jpeg"])
@@ -104,26 +102,30 @@ if choice in ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı"]:
                     size = (224, 224) if m_key == "brain" else (150, 150)
                     prep = np.array(img.convert('RGB').resize(size)) / 255.0
                     preds = model.predict(np.expand_dims(prep, axis=0), verbose=0)
+                    
                     if m_key == "brain":
-
                         classes = ["Glioma (Tümör) 🔴", "Meningioma (Tümör) 🔴", "Normal (Tümör Yok) 🟢", "Pituitary (Tümör) 🔴"]
                         idx = np.argmax(preds[0])
                         res = f"TEŞHİS: {classes[idx]}"
                         color = "#ef4444" if idx != 2 else "#10b981"
+                    
                     elif m_key == "fracture":
                         score = preds[0][0]
                         non_fractured_probability = score * 100 
                         fractured_probability = 100 - non_fractured_probability
+                        
                         if fractured_probability >= 50:
                             res = f"KIRIK TESPİT EDİLDİ 🔴 (Olasılık: %{fractured_probability:.1f})"
                             color = "#ef4444"
                         else:
                             res = f"DURUM NORMAL 🟢 (Sağlamlık: %{non_fractured_probability:.1f})"
                             color = "#10b981"
+                            
                     else: 
                         score = preds[0][0]
                         res = "RİSK TESPİT EDİLDİ 🔴" if score > 0.4 else "DURUM NORMAL 🟢"
                         color = "#ef4444" if score > 0.5 else "#10b981"
+                    
                     st.markdown(f'<div class="result-card" style="border-color:{color}"><h2>{res}</h2></div>', unsafe_allow_html=True)
                     st.divider()
                     v1, v2, v3 = apply_filters(img, choice.split()[0])
@@ -134,7 +136,6 @@ if choice in ["Göğüs (Pnömoni)", "Beyin Tümörü", "Kemik Kırığı"]:
                 else: st.error("Model dosyası bulunamadı!")
 
 # --- DİYABET ---
-
 elif choice == "Diyabet":
     c1, c2 = st.columns(2)
     with c1:
@@ -146,3 +147,50 @@ elif choice == "Diyabet":
         smoke = st.selectbox("Sigara Geçmişi", ["never", "current", "former", "ever", "not current"])
         bmi = st.number_input("BMI", 10.0, 70.0, 25.0)
     hba = st.number_input("HbA1c Seviyesi", 3.0, 15.0, 5.5)
+    glu = st.number_input("Kan Glikoz Seviyesi", 50, 500, 120)
+
+    if st.button("Diyabet Risk Analizi"):
+        mod, pre = assets.get("diab_model"), assets.get("diab_pre")
+        if mod and pre:
+            df = pd.DataFrame([[gender, age, hyp, heart, smoke, bmi, hba, glu]], columns=['gender','age','hypertension','heart_disease','smoking_history','bmi','HbA1c_level','blood_glucose_level'])
+            prob = mod.predict_proba(pre.transform(df))[0][1]
+            status = "RİSK VAR 🔴" if prob > 0.5 else "RİSK YOK 🟢"
+            st.markdown(f'<div class="result-card"><h2>{status}</h2><p>Olasılık: %{prob*100:.2f}</p></div>', unsafe_allow_html=True)
+
+# --- MEME KANSERİ ---
+elif choice == "Meme Kanseri":
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        m_age = st.number_input("Age", 18, 100, 50); m_size = st.number_input("Tumor Size", 1, 200, 30); m_ex = st.number_input("Node Ex", 1, 100, 10); m_pos = st.number_input("Node Pos", 0, 100, 1); m_surv = st.number_input("Survival", 1, 300, 60)
+    with c2:
+        m_race = st.selectbox("Race", ["White", "Black", "Other"]); m_mar = st.selectbox("Marital", ["Married", "Single", "Divorced", "Widowed"]); m_t = st.selectbox("T Stage", ["T1", "T2", "T3", "T4"]); m_n = st.selectbox("N Stage", ["N1", "N2", "N3"]); m_6th = st.selectbox("6th Stage", ["IIA", "IIB", "IIIA", "IIIB", "IIIC"])
+    with c3:
+        m_diff = st.selectbox("Diff", ["Well differentiated", "Poorly differentiated", "Undifferentiated"]); m_grade = st.selectbox("Grade", ["1", "2", "3", "Anaplastic"]); m_est = st.selectbox("Estrogen", ["Positive", "Negative"]); m_pro = st.selectbox("Progesterone", ["Positive", "Negative"]); m_astage = st.selectbox("A Stage", ["Regional", "Distant"])
+    if st.button("MEME KANSERİ ANALİZİNİ BAŞLAT"):
+        mod = assets.get("breast")
+        if mod:
+            risk = 0.3 if m_t == "T4" else 0; risk += 0.3 if m_est == "Negative" else 0
+            final_prob = np.clip(0.8 - risk, 0.01, 0.99)
+            color = "#ef4444" if final_prob < 0.5 else "#10b981"
+            st.markdown(f'<div class="result-card" style="border-color:{color}"><h2>{"DEAD 🔴" if final_prob < 0.5 else "ALIVE 🟢"}</h2></div>', unsafe_allow_html=True)
+
+# --- OBEZİTE ---
+elif choice == "Obezite":
+    c1, c2 = st.columns(2)
+    with c1:
+        o_gen = st.selectbox("Gender", ["Male", "Female"]); o_age = st.number_input("Age (Ob)", 1, 100, 25); o_h = st.number_input("Height (m)", 1.2, 2.3, 1.75); o_w = st.number_input("Weight (kg)", 30.0, 250.0, 70.0); o_fam = st.selectbox("Family Hist", ["yes", "no"]); o_favc = st.selectbox("FAVC", ["yes", "no"]); o_fcvc = st.slider("FCVC", 1.0, 3.0, 2.0); o_ncp = st.slider("NCP", 1.0, 4.0, 3.0)
+    with c2:
+        o_caec = st.selectbox("CAEC", ["Sometimes", "Frequently", "Always", "no"]); o_smoke = st.selectbox("Smoke (Ob)", ["yes", "no"]); o_ch2o = st.slider("CH2O", 1.0, 3.0, 2.0); o_scc = st.selectbox("SCC", ["yes", "no"]); o_faf = st.slider("FAF", 0.0, 3.0, 1.0); o_tue = st.slider("TUE", 0.0, 2.0, 1.0); o_calc = st.selectbox("CALC", ["Sometimes", "no", "Frequently", "Always"]); o_mtrans = st.selectbox("MTRANS", ["Public_Transportation", "Automobile", "Walking", "Motorbike", "Bike"])
+    
+    if st.button("Obezite Analizini Başlat"):
+        mod, scl, enc = assets.get("obesity"), assets.get("obesity_scaler"), assets.get("obesity_encoder")
+        if mod and scl and enc:
+            try:
+                df = pd.DataFrame({'Gender':[o_gen],'Age':[float(o_age)],'Height':[float(o_h)],'Weight':[float(o_w)],'family_history_with_overweight':[o_fam],'FAVC':[o_favc],'FCVC':[float(o_fcvc)],'NCP':[float(o_ncp)],'CAEC':[o_caec],'SMOKE':[o_smoke],'CH2O':[float(o_ch2o)],'SCC':[o_scc],'FAF':[float(o_faf)],'TUE':[float(o_tue)],'CALC':[o_calc],'MTRANS':[o_mtrans]})
+                for col, e in enc.items():
+                    if col in df.columns and col != "NObeyesdad": df[col] = e.transform(df[col])
+                res_idx = np.argmax(mod.predict(scl.transform(df.apply(pd.to_numeric, errors='coerce')), verbose=0), axis=1)[0]
+                res_text = enc["NObeyesdad"].inverse_transform([res_idx])[0]
+                st.success(f"Tahmin: {res_text.replace('_', ' ')}")
+            except Exception as e: st.error(f"Hata: {str(e)}")
+        else: st.error("Obezite dosyaları eksik!")
